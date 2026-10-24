@@ -1,45 +1,34 @@
 # QRDrop
 
-**Privacy-first optical file transfer using animated QR codes.**
+**Privacy-first, optical file transfer using animated QR codes.**
 
-QRDrop splits a selected file into QR frames on the sender's screen. A receiver scans those frames with a camera, rebuilds the file in browser memory, validates its SHA-256 checksum, and lets the recipient save it locally.
+QRDrop transfers a file from one screen to another using a looping sequence of QR frames. The sender reads the chosen file in browser memory, the receiver scans frames with a camera, reconstructs the bytes in memory, verifies SHA-256, and offers an explicit save action.
 
-## Privacy model
+## Deploy on GitHub Pages
 
-- **No file upload or relay:** the optical transfer UI does not send file contents to a server.
-- **No cloud storage:** the sender's file is processed in browser memory and represented as QR frames.
-- **No WebRTC, LAN transfer, or network relay:** the intended data path is screen-to-camera.
-- **Checksum verification:** the receiver verifies the reconstructed bytes with SHA-256 before offering the file for saving.
-- QR data is **not encrypted**. Anyone who can capture all frames may reconstruct the transferred file. Do not transfer sensitive files in a public or observable setting unless you add end-to-end encryption.
+1. In this repository, open **Settings → Pages**.
+2. Set the build source to **GitHub Actions**.
+3. The workflow publishes only the `static/` folder when a commit lands on `main`.
+4. Once the workflow succeeds, open: https://lalitkumar790.github.io/QRDrop/
 
-## GitHub Pages
+## Offline and privacy architecture
 
-The repository includes a GitHub Actions workflow that publishes the `static/` directory to GitHub Pages whenever changes are pushed to `main`.
+- The optical transfer path is screen → visible QR frames → camera → reconstructed file. It does not use internet, Wi-Fi, WebRTC, LAN sockets, a relay, or a file-upload endpoint.
+- All runtime assets, including the QR generator, are hosted in `static/`; the page has **no third-party CDN dependency**.
+- Opening the hosted page for the first time still requires downloading it from GitHub Pages. After it has loaded and the service worker has cached its assets, the app can be used with the network disabled. Test offline behavior on the actual devices before relying on it.
+- File contents are not encrypted. Anyone who can record/scan the full QR sequence could reconstruct the file; transfer only in a physically private place.
+- Sender and receiver data stays in browser memory during the transfer. The receiver must press **Save file** to write a copy to the device. Closing/reloading the page before saving loses the in-memory reconstruction.
 
-1. Open **Settings → Pages** in this repository.
-2. Under **Build and deployment**, choose **GitHub Actions** as the source.
-3. Open **Actions** and confirm the **Deploy QRDrop to GitHub Pages** workflow completes.
-4. The published URL should be `https://lalitkumar790.github.io/QRDrop/`.
+## Browser requirements and limitations
 
-## Browser and offline limitations
-
-- Camera receiving requires a secure context (HTTPS on GitHub Pages), camera permission, and a browser that supports `getUserMedia` and `BarcodeDetector`. Support varies by browser and version.
-- The QR generator library is loaded from a CDN on initial load and may be cached by the service worker. **The first visit requires internet access**; offline startup is not guaranteed until all required resources have been cached successfully.
-- After the app and dependencies have been cached, the optical transfer itself can be performed with internet and Wi-Fi disabled.
-- Transfer is intentionally slow compared with network transfer. At a 512-byte payload per frame, 1 MiB requires roughly 2,048 frames; at 700 ms per frame, one uninterrupted cycle is about 24 minutes, excluding scanning overhead. The receiver gathers frames continuously, so keep the sender running until all frames have been collected.
-- Files are held in browser memory during a session. The receiver must explicitly save the completed file; closing/reloading the page can lose an unsaved transfer.
-- Camera focus, display brightness, screen refresh, distance, and ambient light affect reliability.
+- The receiver needs camera permission, a secure context (GitHub Pages provides HTTPS), `getUserMedia`, and `BarcodeDetector` QR support. Support differs across browser versions; recent Android Chrome is the primary target.
+- Keep screens bright, devices steady, and the sender running long enough for missing frames to repeat.
+- Optical transfer is slow by design: at 512 bytes per frame and a 700 ms frame delay, a 1 MiB file needs about 2,048 frames—roughly 24 minutes for one full cycle, before scanning overhead.
+- This is a prototype and has not been validated across physical devices or undergone a production security review.
 
 ## Project layout
 
-- `static/index.html` — static web interface
-- `static/style.css` — UI styling
-- `static/app.js` — QR frame encoding, scanning, reassembly, and checksum verification
-- `static/sw.js` — same-origin static asset caching
-- `.github/workflows/pages.yml` — GitHub Pages deployment workflow
-
-The legacy Python server and its tests, if present in the repository, are not required for the GitHub Pages optical-transfer experience.
-
-## Security note
-
-QRDrop is a browser-based transfer prototype, not a security audit or a guarantee that every browser cache behaves identically. Review the code before transferring sensitive material, and verify that the browser is genuinely offline when that requirement matters.
+- `static/index.html`, `static/style.css`, `static/app.js` — user interface and optical transfer logic
+- `static/qrcode.min.js`, `static/QRCODE-LICENSE.txt` — locally vendored QR generator and its MIT license
+- `static/sw.js`, `static/manifest.webmanifest` — offline cache and installable web-app metadata
+- `server.py`, `tests/test_server.py` — legacy local HTTP MVP and regression tests; these are not used by the GitHub Pages optical frontend

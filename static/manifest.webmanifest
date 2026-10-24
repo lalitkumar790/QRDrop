@@ -1,0 +1,10 @@
+{
+  "name": "QRDrop Optical",
+  "short_name": "QRDrop",
+  "description": "Offline optical QR file transfer",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b0e14",
+  "theme_color": "#10131b"
+}
