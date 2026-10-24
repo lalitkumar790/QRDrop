@@ -1,9 +1,8 @@
-const CACHE = "qrdrop-optical-v2";
+const CACHE = "qrdrop-optical-v3";
 const CORE = ["./", "./index.html", "./style.css", "./app.js", "./qrcode.min.js", "./manifest.webmanifest"];
 self.addEventListener("install", event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
-    // All runtime dependencies are same-origin assets; there is no CDN request.
     await cache.addAll(CORE);
     await self.skipWaiting();
   })());

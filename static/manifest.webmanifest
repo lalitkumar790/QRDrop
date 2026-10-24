@@ -1,10 +1,10 @@
 {
-  "name": "QRDrop Optical",
+  "name": "QRDrop — Offline file transfer",
   "short_name": "QRDrop",
-  "description": "Offline optical QR file transfer",
+  "description": "Move files between screens with QR codes. No cloud storage or automatic copies.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#0b0e14",
-  "theme_color": "#10131b"
+  "background_color": "#f4f5f1",
+  "theme_color": "#f4f5f1"
 }

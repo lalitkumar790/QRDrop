@@ -250,7 +250,13 @@
     const url=URL.createObjectURL(state.doneBlob), link=document.createElement("a");
     link.href=url; link.download=state.filename||"received-file"; link.click();
     setTimeout(()=>URL.revokeObjectURL(url),60000);
-    el("complete-details").textContent="Download requested. The browser/OS decides where it is saved.";
+    // The recipient explicitly chose to save, so drop QRDrop's in-memory references.
+    state.doneBlob=null;
+    state.received.clear();
+    el("save-file").disabled=true;
+    el("save-file").textContent="Save requested";
+    el("complete-details").textContent="Download requested. QRDrop has released its in-memory copy; the browser handles the saved file.";
+    el("receive-status").textContent="Save requested · QRDrop released its in-memory data";
   });
   window.addEventListener("beforeunload",()=>{stopSending();stopScanning();state.doneBlob=null;});
   state.qrReady=!!window.QRCode;

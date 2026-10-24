@@ -3,72 +3,83 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#10131b">
-  <meta name="description" content="QRDrop Optical — transfer files with animated QR codes, without a network or cloud relay.">
-  <title>QRDrop Optical — Offline File Transfer</title>
+  <meta name="theme-color" content="#f4f5f1">
+  <meta name="description" content="Send files between screens with QR codes. No cloud storage or automatic copies. Save a received file only when you choose.">
+  <title>QRDrop — Offline file transfer</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="./" aria-label="QRDrop home"><span class="brand-mark">Q</span><span>QRDrop<span class="brand-light"> Optical</span></span></a>
-    <div class="status"><span id="offline-dot" class="dot"></span><span id="offline-status">Checking offline readiness…</span></div>
+    <a class="brand" href="./" aria-label="QRDrop home"><span class="brand-mark" aria-hidden="true">Q</span><span>QRDrop</span></a>
+    <div class="status" aria-live="polite"><span id="offline-dot" class="dot" aria-hidden="true"></span><span id="offline-status">Checking offline readiness…</span></div>
   </header>
-  <main>
+  <main class="site-main">
     <section class="hero">
-      <div class="eyebrow"><span class="pulse"></span> NO CLOUD · NO RELAY · NO NETWORK DURING TRANSFER</div>
-      <h1>Your files.<br><span>Across the air.</span></h1>
-      <p class="hero-copy">Turn a screen into a stream of QR frames. Another camera catches the frames and rebuilds the file — privately, offline, and without a QRDrop file server.</p>
-      <div class="notice"><strong>One-time setup:</strong> open this page on both devices while online at least once so the app and QR generator can be cached. Then disconnect internet before transferring. Camera scanning requires a supported browser and permission.</div>
+      <div class="eyebrow">OFFLINE FILE TRANSFER</div>
+      <h1>Move a file with a screen and a camera.</h1>
+      <p class="hero-copy">QRDrop turns your file into a series of QR codes. Show them on one device and scan them with the other. The file travels optically, not through a server.</p>
+    </section>
+    <section class="privacy-note" aria-label="Privacy promise">
+      <div class="privacy-note-title">No cloud storage. No automatic copies.</div>
+      <p>Received files stay in this browser tab until you choose <strong>Save file</strong>. Nothing is saved to your device automatically. Close the tab before saving, and the unsaved file is gone.</p>
+    </section>
+    <section class="setup-note">
+      <span class="setup-label">Before you start</span>
+      <p>Open QRDrop on both devices while online once so the app can be cached. Then turn off Wi-Fi and mobile data on both devices before transferring. Camera scanning needs a supported browser and permission.</p>
     </section>
 
-    <section class="workspace">
-      <div class="mode-tabs" role="tablist" aria-label="Transfer direction">
-        <button class="mode-tab active" id="send-tab" role="tab" aria-selected="true">↗ Send a file</button>
-        <button class="mode-tab" id="receive-tab" role="tab" aria-selected="false">⌗ Receive by camera</button>
+    <section class="workspace" aria-label="File transfer">
+      <div class="mode-tabs" role="tablist" aria-label="Choose transfer direction">
+        <button type="button" class="mode-tab active" id="send-tab" role="tab" aria-controls="send-panel" aria-selected="true">Send</button>
+        <button type="button" class="mode-tab" id="receive-tab" role="tab" aria-controls="receive-panel" aria-selected="false">Receive</button>
       </div>
-
-      <section id="send-panel" class="panel">
-        <div class="panel-heading"><div><span class="step">01 / SEND</span><h2>Choose what to send</h2><p>Any file type. The file is processed in your browser and divided into QR frames.</p></div></div>
-        <label class="file-picker" for="file-input"><span class="picker-icon">＋</span><span><strong id="file-label">Choose a file</strong><small>Nothing is uploaded to QRDrop servers.</small></span><span class="picker-action">Browse</span></label>
+      <section id="send-panel" class="panel" role="tabpanel" aria-labelledby="send-tab">
+        <div class="panel-heading"><div><span class="step">01 · SENDER</span><h2>Choose a file</h2><p>The file is read in this browser and split into QR frames. It is not uploaded anywhere.</p></div></div>
+        <label class="file-picker" for="file-input">
+          <span class="picker-icon" aria-hidden="true">＋</span>
+          <span class="picker-copy"><strong id="file-label">Choose a file</strong><small>Select any file from this device</small></span>
+          <span class="picker-action">Browse</span>
+        </label>
         <input id="file-input" type="file">
         <div id="file-info" class="file-info hidden"></div>
-        <div class="settings-row">
-          <label for="frame-delay">Frame speed <span id="delay-label">700 ms</span></label>
-          <input id="frame-delay" type="range" min="250" max="1500" step="50" value="700">
-        </div>
+        <div class="settings-row"><label for="frame-delay">Frame interval <span id="delay-label">700 ms</span></label><input id="frame-delay" type="range" min="250" max="1500" step="50" value="700"></div>
         <div class="qr-stage">
-          <div id="qr-placeholder" class="qr-placeholder"><span>⌗</span><strong>Your QR stream appears here</strong><small>Select a file to prepare its frames.</small></div>
-          <div id="qr-display" class="qr-display hidden"><div id="qrcode" aria-label="Animated QR transfer frame"></div><div class="frame-count" id="frame-count">Frame 0 / 0</div></div>
+          <div id="qr-placeholder" class="qr-placeholder"><span aria-hidden="true">▦</span><strong>Your QR codes will appear here</strong><small>Choose a file to prepare the transfer.</small></div>
+          <div id="qr-display" class="qr-display hidden"><div id="qrcode" aria-label="QR transfer frame"></div><div class="frame-count" id="frame-count">Frame 0 / 0</div></div>
         </div>
-        <div class="progress-meta"><span id="send-status">Ready when you are</span><span id="send-percent">0%</span></div>
-        <div class="progress-track"><div id="send-progress" class="progress-fill"></div></div>
-        <div class="button-row"><button id="start-send" class="primary" disabled>Start QR stream <span>→</span></button><button id="stop-send" class="secondary" disabled>Pause</button></div>
-        <p class="hint">Keep this screen bright and visible to the receiving camera. Large files can require many frames; keep both devices steady and close enough to focus.</p>
+        <div class="progress-meta"><span id="send-status" aria-live="polite">Choose a file to get started.</span><span id="send-percent">0%</span></div>
+        <div class="progress-track" aria-hidden="true"><div id="send-progress" class="progress-fill"></div></div>
+        <div class="button-row"><button type="button" id="start-send" class="primary" disabled>Start QR stream</button><button type="button" id="stop-send" class="secondary" disabled>Pause</button></div>
+        <p class="hint">Keep this screen bright and visible to the receiving camera. Leave the QR stream running until the receiver has collected every frame. Large files can take a while.</p>
       </section>
 
-      <section id="receive-panel" class="panel hidden">
-        <div class="panel-heading"><div><span class="step">02 / RECEIVE</span><h2>Scan the QR stream</h2><p>Point your camera at the sending screen. Missed frames are retried as the sender loops.</p></div></div>
+      <section id="receive-panel" class="panel hidden" role="tabpanel" aria-labelledby="receive-tab">
+        <div class="panel-heading"><div><span class="step">02 · RECEIVER</span><h2>Scan the QR codes</h2><p>Point the camera at the sender’s screen. QRDrop collects the frames and checks the reconstructed file before offering it to you.</p></div></div>
         <div class="camera-stage">
-          <video id="camera" playsinline muted></video>
-          <div id="camera-placeholder" class="camera-placeholder"><span>▣</span><strong>Camera is off</strong><small>Start scanning to receive QR frames.</small></div>
-          <div class="scan-corners"><i></i><i></i><i></i><i></i></div>
+          <video id="camera" playsinline muted aria-label="Camera preview"></video>
+          <div id="camera-placeholder" class="camera-placeholder"><span aria-hidden="true">▣</span><strong>Camera is off</strong><small>Start the camera to scan the sender’s screen.</small></div>
+          <div class="scan-corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
         </div>
-        <div class="progress-meta"><span id="receive-status">Waiting for camera</span><span id="receive-percent">0%</span></div>
-        <div class="progress-track"><div id="receive-progress" class="progress-fill"></div></div>
-        <div class="receive-stats"><div><small>Frames captured</small><strong id="frames-captured">0 / —</strong></div><div><small>Data received</small><strong id="bytes-received">0 B</strong></div><div><small>File name</small><strong id="incoming-name">Not detected</strong></div></div>
-        <div class="button-row"><button id="start-scan" class="primary">Start camera <span>→</span></button><button id="stop-scan" class="secondary" disabled>Stop</button></div>
-        <div id="complete-box" class="complete-box hidden"><div class="complete-icon">✓</div><div class="complete-copy"><strong id="complete-title">File reconstructed</strong><small id="complete-details">Your browser has reconstructed the file in memory.</small></div><button id="save-file" class="primary">Save file</button></div>
-        <p class="hint">The received file stays in browser memory until you save it or close/reload the page. Saving necessarily writes the file to your device. QRDrop itself has no file server or cloud storage.</p>
+        <div class="progress-meta"><span id="receive-status" aria-live="polite">Waiting for camera</span><span id="receive-percent">0%</span></div>
+        <div class="progress-track" aria-hidden="true"><div id="receive-progress" class="progress-fill"></div></div>
+        <div class="receive-stats"><div><small>Frames collected</small><strong id="frames-captured">0 / —</strong></div><div><small>Data received</small><strong id="bytes-received">0 B</strong></div><div><small>File name</small><strong id="incoming-name">Not detected</strong></div></div>
+        <div class="button-row"><button type="button" id="start-scan" class="primary">Start camera</button><button type="button" id="stop-scan" class="secondary" disabled>Stop</button></div>
+        <div id="complete-box" class="complete-box hidden"><div class="complete-icon" aria-hidden="true">✓</div><div class="complete-copy"><strong id="complete-title">File reconstructed</strong><small id="complete-details">File verified. Not saved yet.</small></div><button type="button" id="save-file" class="primary">Save file</button></div>
+        <p class="hint">Saving happens only when you press <strong>Save file</strong>. QRDrop does not keep a cloud copy or make an automatic copy on your device. If you leave without saving, the received file is cleared from memory.</p>
       </section>
     </section>
 
-    <section class="privacy-grid">
-      <article><span class="privacy-icon">⌁</span><h3>Optical only</h3><p>File contents travel as visible QR frames from one screen to another. No WebRTC, local-network transfer, cloud upload, or relay is used.</p></article>
-      <article><span class="privacy-icon">◌</span><h3>Browser memory</h3><p>QRDrop does not persist transferred files. The receiving browser holds chunks in memory; a user must explicitly save the reconstructed file.</p></article>
-      <article><span class="privacy-icon">!</span><h3>Know the limits</h3><p>Optical transfer is slow. Camera scanning depends on browser support. The page needs a one-time online load unless it has already been installed/cached.</p></article>
+    <section class="details-section" aria-label="How QRDrop handles files">
+      <h2>Simple by design</h2>
+      <div class="details-grid">
+        <article><h3>No server in the transfer</h3><p>File data moves as visible QR codes from one screen to the other. There is no file upload, cloud storage, network relay or WebRTC connection.</p></article>
+        <article><h3>You decide what gets saved</h3><p>The reconstructed file stays in browser memory until you choose to save it. QRDrop does not automatically download or retain a copy.</p></article>
+        <article><h3>A practical limitation</h3><p>QR transfer is slower than a network transfer. The receiver needs HTTPS, camera permission and a browser that supports camera QR scanning.</p></article>
+      </div>
+      <p class="security-note"><strong>One privacy note:</strong> QR frames are not encrypted. Someone who can capture the complete sequence could reconstruct the file, so avoid transferring sensitive files where other people can see the screen.</p>
     </section>
-    <footer><span>QRDrop Optical · Open-source · No account</span><span>Keep internet off during transfer for a strict offline session.</span></footer>
+    <footer><span>QRDrop · No account · No cloud copy</span><span>For a strictly offline transfer, keep both devices disconnected after loading the app.</span></footer>
   </main>
   <script src="./qrcode.min.js" defer></script>
   <script src="./app.js" defer></script>
