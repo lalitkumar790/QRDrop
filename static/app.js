@@ -133,7 +133,7 @@
     if(!response.ok) throw new Error(data.error||"Request failed (HTTP "+response.status+")");
     return data;
   }
-  function sendUploadChunk(path, blob, onProgress) {
+  function sendUploadChunk(path, blob, chunkHash, onProgress) {
     return new Promise((resolve,reject)=>{
       const xhr=new XMLHttpRequest();
       xhr.open("POST",localApi(path));
