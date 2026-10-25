@@ -127,27 +127,84 @@
     el("local-file-label").textContent=localFile ? localFile.name+" · "+formatBytes(localFile.size) : "Choose a file to upload";
     el("local-upload").disabled=!localFile || !localToken;
   });
+  async function localJson(path, options={}) {
+    const response=await fetch(localApi(path),{cache:"no-store",...options});
+    let data={}; try { data=await response.json(); } catch (_) {}
+    if(!response.ok) throw new Error(data.error||"Request failed (HTTP "+response.status+")");
+    return data;
+  }
+  function sendUploadChunk(path, blob, onProgress) {
+    return new Promise((resolve,reject)=>{
+      const xhr=new XMLHttpRequest();
+      xhr.open("POST",localApi(path));
+      xhr.setRequestHeader("Content-Type","application/octet-stream");
+      xhr.upload.onprogress=e=>{if(e.lengthComputable) onProgress(e.loaded);};
+      xhr.onload=()=>{let data={};try{data=JSON.parse(xhr.responseText)}catch(_){} 
+        if(xhr.status>=200&&xhr.status<300) resolve(data);
+        else {const err=new Error(data.error||"Chunk failed (HTTP "+xhr.status+")");err.status=xhr.status;err.offset=data.offset;reject(err);}
+      };
+      xhr.onerror=()=>reject(new Error("Network connection interrupted"));
+      xhr.send(blob);
+    });
+  }
   el("local-upload").addEventListener("click",async()=>{
     if(!localFile || !localToken) return;
     const file=localFile; el("local-upload").disabled=true;
-    el("local-status").textContent="Uploading "+file.name+"…";
+    el("local-status").textContent="Preparing resumable upload · "+file.name;
     el("local-percent").textContent="0%"; el("local-progress").style.width="0%";
+    let uploadId="";
+    const sessionKey="qrdrop-upload-session";
     try {
-      await new Promise((resolve,reject)=>{
-        const xhr=new XMLHttpRequest();
-        xhr.open("POST",localApi("/api/upload?name="+encodeURIComponent(file.name)));
-        xhr.setRequestHeader("Content-Type","application/octet-stream");
-        xhr.upload.onprogress=e=>{if(e.lengthComputable){const p=Math.round(e.loaded/e.total*100);el("local-percent").textContent=p+"%";el("local-progress").style.width=p+"%";}};
-        xhr.onload=()=>{let result={};try{result=JSON.parse(xhr.responseText)}catch(_){}
-          if(xhr.status>=200&&xhr.status<300){el("local-status").textContent="Uploaded and verified · "+result.name+" · "+formatBytes(result.size);resolve();}
-          else reject(new Error(result.error||"Upload failed (HTTP "+xhr.status+")"));};
-        xhr.onerror=()=>reject(new Error("Network connection failed"));
-        xhr.send(file);
-      });
+      // Reuse the previous session after a page refresh when the same file is selected again.
+      try {
+        const saved=JSON.parse(sessionStorage.getItem(sessionKey)||"null");
+        if(saved && saved.name===file.name && saved.size===file.size && saved.lastModified===file.lastModified) {
+          const status=await localJson("/api/upload/status?id="+encodeURIComponent(saved.id));
+          uploadId=saved.id;
+          el("local-status").textContent="Resuming upload · "+formatBytes(status.offset)+" already received";
+        }
+      } catch (_) { uploadId=""; }
+      if(!uploadId) {
+        const started=await localJson("/api/upload/start?name="+encodeURIComponent(file.name)+"&size="+file.size,{method:"POST"});
+        uploadId=started.id;
+        sessionStorage.setItem(sessionKey,JSON.stringify({id:uploadId,name:file.name,size:file.size,lastModified:file.lastModified}));
+      }
+      const chunkSize=4*1024*1024;
+      let status=await localJson("/api/upload/status?id="+encodeURIComponent(uploadId));
+      let offset=status.offset;
+      while(offset<file.size) {
+        const chunkStart=offset;
+        const chunk=file.slice(chunkStart,Math.min(chunkStart+chunkSize,file.size));
+        let accepted=false;
+        for(let attempt=0;attempt<4&&!accepted;attempt++) {
+          try {
+            const result=await sendUploadChunk("/api/upload/chunk?id="+encodeURIComponent(uploadId)+"&offset="+chunkStart,chunk,loaded=>{
+              const pct=Math.min(99,Math.floor((chunkStart+loaded)/Math.max(file.size,1)*100));
+              el("local-percent").textContent=pct+"%"; el("local-progress").style.width=pct+"%";
+            });
+            offset=result.offset; accepted=true;
+          } catch(err) {
+            // A response may be lost after the server committed a chunk. Ask for its
+            // acknowledged offset before retrying, so the same bytes are never appended twice.
+            try {
+              status=await localJson("/api/upload/status?id="+encodeURIComponent(uploadId));
+              offset=status.offset;
+              if(offset>chunkStart) accepted=true;
+            } catch (_) {}
+            if(!accepted && attempt===3) throw err;
+          }
+        }
+        const pct=Math.floor(offset/Math.max(file.size,1)*100);
+        el("local-percent").textContent=pct+"%"; el("local-progress").style.width=pct+"%";
+        el("local-status").textContent="Uploading · "+formatBytes(offset)+" / "+formatBytes(file.size);
+      }
+      const result=await localJson("/api/upload/finish?id="+encodeURIComponent(uploadId),{method:"POST"});
+      sessionStorage.removeItem(sessionKey);
+      el("local-status").textContent="Uploaded · SHA-256 verified · "+result.name;
       localFile=null; el("local-file-input").value=""; el("local-file-label").textContent="Choose a file to upload";
       el("local-percent").textContent="100%"; el("local-progress").style.width="100%";
       await refreshLocalFiles();
-    } catch(err) { el("local-status").textContent=err.message||"Upload failed"; }
+    } catch(err) { el("local-status").textContent=(err.message||"Upload failed")+". Select the same file again to resume."; }
     finally { el("local-upload").disabled=!localFile || !localToken; }
   });
   el("local-refresh").addEventListener("click",refreshLocalFiles);
