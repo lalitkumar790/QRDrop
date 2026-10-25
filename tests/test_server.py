@@ -66,6 +66,30 @@ class QRDropHTTPTests(unittest.TestCase):
             self.assertTrue(json.load(r)["ok"])
         with self.request("/api/files?token="+self.token) as r:
             self.assertFalse(any(x["name"]=="test binary.bin" for x in json.load(r)["files"]))
+    def test_resumable_chunk_upload_and_hash(self):
+        payload = bytes(range(256)) * 20500
+        start = "/api/upload/start?token=" + self.token + "&name=resumable.bin&size=" + str(len(payload))
+        with self.request(start, "POST") as response: session = json.load(response)
+        upload_id = session["id"]
+        finish = "/api/upload/finish?id=" + upload_id + "&token=" + self.token
+        with self.assertRaises(urllib.error.HTTPError) as incomplete: self.request(finish, "POST")
+        self.assertEqual(incomplete.exception.code, 409)
+        offset = 0
+        while offset < len(payload):
+            chunk = payload[offset:offset + 4 * 1024 * 1024]
+            path = "/api/upload/chunk?id=" + upload_id + "&offset=" + str(offset) + "&token=" + self.token
+            with self.request(path, "POST", chunk) as response: result = json.load(response)
+            offset = result["offset"]
+        with self.request(finish, "POST") as response: result = json.load(response)
+        self.assertEqual(result["sha256"], hashlib.sha256(payload).hexdigest())
+
+    def test_resumable_chunk_rejects_wrong_offset(self):
+        start = "/api/upload/start?token=" + self.token + "&name=offset.bin&size=10"
+        with self.request(start, "POST") as response: session = json.load(response)
+        path = "/api/upload/chunk?id=" + session["id"] + "&offset=1&token=" + self.token
+        with self.assertRaises(urllib.error.HTTPError) as mismatch: self.request(path, "POST", b"abc")
+        self.assertEqual(mismatch.exception.code, 409)
+        self.assertEqual(json.loads(mismatch.exception.read())["offset"], 0)
     def test_duplicate_filename_does_not_overwrite(self):
         for data in (b"first",b"second"):
             with self.request("/api/upload?token="+self.token+"&name=same.txt","POST",data) as r: json.load(r)
