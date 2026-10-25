@@ -60,17 +60,101 @@
     return supported;
   }
   function showMode(mode) {
-    const sending=mode==="send";
+    const sending=mode==="send", receiving=mode==="receive", local=mode==="local";
     el("send-panel").classList.toggle("hidden",!sending);
-    el("receive-panel").classList.toggle("hidden",sending);
-    el("send-tab").classList.toggle("active",sending);
-    el("receive-tab").classList.toggle("active",!sending);
-    el("send-tab").setAttribute("aria-selected",String(sending));
-    el("receive-tab").setAttribute("aria-selected",String(!sending));
-    if(!sending) checkCameraSupport();
+    el("receive-panel").classList.toggle("hidden",!receiving);
+    el("local-panel").classList.toggle("hidden",!local);
+    for (const [id,active] of [["send-tab",sending],["receive-tab",receiving],["local-tab",local]]) {
+      el(id).classList.toggle("active",active);
+      el(id).setAttribute("aria-selected",String(active));
+    }
+    if(receiving) checkCameraSupport();
+    if(local) { checkLocalServer(); refreshLocalFiles(); }
   }
   el("send-tab").addEventListener("click",()=>showMode("send"));
   el("receive-tab").addEventListener("click",()=>showMode("receive"));
+  el("local-tab").addEventListener("click",()=>showMode("local"));
+
+  const localToken = new URLSearchParams(location.hash.slice(1)).get("token") || "";
+  let localFile = null;
+  const localApi = path => path + (path.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(localToken);
+  async function checkLocalServer() {
+    if (!localToken) {
+      el("local-status").textContent = "Local server not detected. Start server.py and open its printed pairing link.";
+      el("local-host").textContent = "Not connected";
+      return false;
+    }
+    try {
+      const r=await fetch(localApi("/api/info"),{cache:"no-store"});
+      if(!r.ok) throw new Error("Server rejected the session");
+      const info=await r.json();
+      el("local-status").textContent="Connected to local server · "+info.name;
+      el("local-host").textContent=location.origin;
+      el("local-copy").disabled=false;
+      el("local-upload").disabled=!localFile;
+      return true;
+    } catch (_) {
+      el("local-status").textContent="Cannot reach local server. Open QRDrop from the Python server's pairing link.";
+      el("local-host").textContent=location.origin;
+      return false;
+    }
+  }
+  async function refreshLocalFiles() {
+    if(!localToken) return;
+    try {
+      const r=await fetch(localApi("/api/files"),{cache:"no-store"});
+      if(!r.ok) throw new Error("Could not list files");
+      const data=await r.json(), root=el("local-files");
+      root.replaceChildren();
+      el("local-file-count").textContent=data.files.length+" file"+(data.files.length===1?"":"s");
+      if(!data.files.length) { const p=document.createElement("p"); p.className="hint"; p.textContent="No files yet. Upload one here or from another device."; root.append(p); return; }
+      for(const file of data.files) {
+        const row=document.createElement("div"); row.className="local-file-row";
+        const meta=document.createElement("div"); meta.className="local-file-meta";
+        const name=document.createElement("strong"); name.textContent=file.name;
+        const detail=document.createElement("small"); detail.textContent=formatBytes(file.size)+" · SHA-256 "+file.sha256.slice(0,12)+"…";
+        meta.append(name,detail);
+        const actions=document.createElement("div"); actions.className="local-file-actions";
+        const download=document.createElement("a"); download.className="secondary local-download"; download.href=file.url; download.textContent="Download"; download.setAttribute("rel","noreferrer");
+        const remove=document.createElement("button"); remove.type="button"; remove.className="secondary"; remove.textContent="Delete";
+        remove.addEventListener("click",async()=>{ if(!confirm("Delete "+file.name+" from this device?")) return; const d=await fetch(localApi("/api/files?name="+encodeURIComponent(file.name)),{method:"DELETE"}); if(d.ok) refreshLocalFiles(); else el("local-status").textContent="Delete failed"; });
+        actions.append(download,remove); row.append(meta,actions); root.append(row);
+      }
+    } catch (_) { el("local-status").textContent="Could not load files. Check the server and pairing link."; }
+  }
+  el("local-file-input").addEventListener("change",e=>{
+    localFile=e.target.files && e.target.files[0] || null;
+    el("local-file-label").textContent=localFile ? localFile.name+" · "+formatBytes(localFile.size) : "Choose a file to upload";
+    el("local-upload").disabled=!localFile || !localToken;
+  });
+  el("local-upload").addEventListener("click",async()=>{
+    if(!localFile || !localToken) return;
+    const file=localFile; el("local-upload").disabled=true;
+    el("local-status").textContent="Uploading "+file.name+"…";
+    el("local-percent").textContent="0%"; el("local-progress").style.width="0%";
+    try {
+      await new Promise((resolve,reject)=>{
+        const xhr=new XMLHttpRequest();
+        xhr.open("POST",localApi("/api/upload?name="+encodeURIComponent(file.name)));
+        xhr.setRequestHeader("Content-Type","application/octet-stream");
+        xhr.upload.onprogress=e=>{if(e.lengthComputable){const p=Math.round(e.loaded/e.total*100);el("local-percent").textContent=p+"%";el("local-progress").style.width=p+"%";}};
+        xhr.onload=()=>{let result={};try{result=JSON.parse(xhr.responseText)}catch(_){}
+          if(xhr.status>=200&&xhr.status<300){el("local-status").textContent="Uploaded and verified · "+result.name+" · "+formatBytes(result.size);resolve();}
+          else reject(new Error(result.error||"Upload failed (HTTP "+xhr.status+")"));};
+        xhr.onerror=()=>reject(new Error("Network connection failed"));
+        xhr.send(file);
+      });
+      localFile=null; el("local-file-input").value=""; el("local-file-label").textContent="Choose a file to upload";
+      el("local-percent").textContent="100%"; el("local-progress").style.width="100%";
+      await refreshLocalFiles();
+    } catch(err) { el("local-status").textContent=err.message||"Upload failed"; }
+    finally { el("local-upload").disabled=!localFile || !localToken; }
+  });
+  el("local-refresh").addEventListener("click",refreshLocalFiles);
+  el("local-copy").addEventListener("click",async()=>{
+    try { await navigator.clipboard.writeText(location.origin); el("local-status").textContent="Local address copied"; }
+    catch(_) { el("local-status").textContent="Copy unavailable; share this address manually: "+location.origin; }
+  });
   el("frame-delay").addEventListener("input",()=>{
     state.delay=Number(el("frame-delay").value);
     el("delay-label").textContent=state.delay+" ms";
