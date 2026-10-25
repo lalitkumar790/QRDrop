@@ -224,9 +224,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json(409, {"error": "Chunk offset mismatch", "offset": session["offset"]})
                 if offset + length > session["size"]:
                     return self.json(413, {"error": "Chunk exceeds declared file size"})
-                expected_hash = self.headers.get("X-Chunk-SHA256", "").lower()
+                expected_hash = self.headers.get("X-QRDrop-Hash", "").lower()
                 if not re.fullmatch(r"[0-9a-f]{64}", expected_hash):
-                    return self.json(400, {"error": "A valid X-Chunk-SHA256 header is required"})
+                    return self.json(400, {"error": "A valid X-QRDrop-Hash header is required"})
                 try:
                     payload = self.rfile.read(length) if length else b""
                     if len(payload) != length:
