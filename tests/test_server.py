@@ -90,6 +90,22 @@ class QRDropHTTPTests(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as mismatch: self.request(path, "POST", b"abc")
         self.assertEqual(mismatch.exception.code, 409)
         self.assertEqual(json.loads(mismatch.exception.read())["offset"], 0)
+    def test_resumable_chunk_rejects_corrupted_payload(self):
+        start = "/api/upload/start?token=" + self.token + "&name=integrity.bin&size=3"
+        with self.request(start, "POST") as response: session = json.load(response)
+        path = "/api/upload/chunk?id=" + session["id"] + "&offset=0&token=" + self.token
+        headers = {"X-QRDrop-Hash": hashlib.sha256(b"abc").hexdigest()}
+        with self.assertRaises(urllib.error.HTTPError) as mismatch:
+            self.request(path, "POST", b"xyz", headers)
+        self.assertEqual(mismatch.exception.code, 422)
+        self.assertEqual(json.loads(mismatch.exception.read())["offset"], 0)
+        good_headers = {"X-QRDrop-Hash": hashlib.sha256(b"abc").hexdigest()}
+        with self.request(path, "POST", b"abc", good_headers) as response:
+            self.assertEqual(json.load(response)["offset"], 3)
+        finish = "/api/upload/finish?id=" + session["id"] + "&token=" + self.token
+        with self.request(finish, "POST") as response:
+            self.assertEqual(json.load(response)["sha256"], hashlib.sha256(b"abc").hexdigest())
+
     def test_duplicate_filename_does_not_overwrite(self):
         for data in (b"first",b"second"):
             with self.request("/api/upload?token="+self.token+"&name=same.txt","POST",data) as r: json.load(r)
