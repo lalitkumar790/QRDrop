@@ -81,7 +81,7 @@
     if(!state.frames.length || !window.QRCode) return;
     state.index=i;
     el("qrcode").innerHTML="";
-    new QRCode(el("qrcode"), {text:state.frames[i],width:320,height:320,correctLevel:QRCode.CorrectLevel.M});
+    new QRCode(el("qrcode"), {text:state.frames[i],width:320,height:320,correctLevel:QRCode.CorrectLevel.L});
     el("frame-count").textContent="Frame "+(i+1)+" / "+state.frames.length;
     el("send-percent").textContent=Math.round((i+1)/state.frames.length*100)+"%";
     el("send-progress").style.width=((i+1)/state.frames.length*100)+"%";
@@ -107,7 +107,7 @@
       const id=Array.from(crypto.getRandomValues(new Uint8Array(5))).map(v=>v.toString(16).padStart(2,"0")).join("");
       const name64=b64(enc.encode(file.name));
       const digest=hex(await crypto.subtle.digest("SHA-256",raw));
-      const size=512, total=Math.max(1,Math.ceil(raw.length/size)), frames=[];
+      const size=1200, total=Math.max(1,Math.ceil(raw.length/size)), frames=[];
       for(let seq=0;seq<total;seq++) {
         const chunk=raw.subarray(seq*size,Math.min(raw.length,(seq+1)*size));
         frames.push("QDROP1|"+id+"|"+seq+"|"+total+"|"+name64+"|"+digest+"|"+b64(chunk));
@@ -171,7 +171,7 @@
       const items=await state.detector.detect(el("camera"));
       for(const item of items) if(item.rawValue) acceptFrame(item.rawValue);
     } catch (_) {}
-    if(state.stream) state.scanTimer=setTimeout(scanLoop,120);
+    if(state.stream) state.scanTimer=setTimeout(scanLoop,60);
   }
   function resetReceive() {
     state.received=new Map(); state.transferId=null; state.total=0; state.filename=""; state.hash=""; state.doneBlob=null;
