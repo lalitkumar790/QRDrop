@@ -95,10 +95,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_bytes(200, data, "text/html; charset=utf-8")
         if path == "/app.js":
             return self.send_bytes(200, (STATIC_DIR / "app.js").read_bytes(), "text/javascript; charset=utf-8")
+        if path == "/qrcode.min.js":
+            return self.send_bytes(200, (STATIC_DIR / "qrcode.min.js").read_bytes(), "text/javascript; charset=utf-8")
         if path == "/style.css":
             return self.send_bytes(200, (STATIC_DIR / "style.css").read_bytes(), "text/css; charset=utf-8")
         if path == "/api/health":
-            return self.json(200, {"ok": True, "app": "QRDrop", "version": "1.1.0"})
+            return self.json(200, {"ok": True, "app": "QRDrop", "version": "1.2.0"})
         if path == "/download":
             ticket = parse_qs(parsed.query).get("ticket", [""])[0]
             with lock:
