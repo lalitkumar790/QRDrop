@@ -1,6 +1,6 @@
 # QRDrop
 
-QRDrop moves files between devices using a looping stream of QR codes. The sender displays the frames; the receiver scans them, rebuilds the file in browser memory, verifies its SHA-256 digest, and gives the recipient the choice to save it.
+QRDrop supports two transfer methods: QR optical transfer for devices with no network connection, and Local Network transfer through a temporary Python server for fast file sharing over the same Wi-Fi or phone hotspot without internet.
 
 **No cloud storage. No automatic copies. The recipient chooses whether to save a received file.**
 
@@ -13,6 +13,16 @@ Open the hosted app: https://lalitkumar790.github.io/QRDrop/
 3. On the sender, choose a file and start the QR stream.
 4. On the receiver, open Receive, allow camera access, and scan the sender’s screen.
 5. Once the file is reconstructed and verified, choose **Save file** to save it.
+
+## Local Network transfer (no internet required)
+
+1. Connect both devices to the same Wi-Fi network or to a phone hotspot. Internet access is not required; the devices just need local connectivity. Some managed or guest Wi-Fi networks block device-to-device traffic.
+2. On the hosting device, install Python 3 and run `python server.py --host 0.0.0.0 --port 8765`.
+3. Open the pairing URL printed by the server on the host, then share that URL only with the intended receiving device.
+4. Select **Local Network** in QRDrop to upload, download, refresh, or delete files. Uploaded files are stored in the server's `received/` folder until deleted.
+5. Stop the server with Ctrl+C when finished. If another device cannot connect, check the host firewall and ensure Wi-Fi client isolation is disabled.
+
+This local-server mode is available when the UI is served by `server.py`; the public GitHub Pages site cannot itself host a server on your device. The session token protects API operations, but the local HTTP connection is not encrypted. Use trusted networks only and stop the server after the transfer.
 
 ## Privacy
 
@@ -35,4 +45,4 @@ Open the hosted app: https://lalitkumar790.github.io/QRDrop/
 - `static/index.html`, `static/style.css`, `static/app.js` — UI and optical transfer logic
 - `static/qrcode.min.js`, `static/QRCODE-LICENSE.txt` — locally hosted QR generator and MIT license
 - `static/sw.js`, `static/manifest.webmanifest` — offline cache and web app metadata
-- `server.py`, `tests/test_server.py` — legacy local HTTP MVP and regression tests; not used by the GitHub Pages optical frontend
+- `server.py`, `tests/test_server.py` — local-network server and regression tests
