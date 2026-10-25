@@ -138,6 +138,7 @@
       const xhr=new XMLHttpRequest();
       xhr.open("POST",localApi(path));
       xhr.setRequestHeader("Content-Type","application/octet-stream");
+      xhr.setRequestHeader("X-QRDrop-Hash",chunkHash);
       xhr.upload.onprogress=e=>{if(e.lengthComputable) onProgress(e.loaded);};
       xhr.onload=()=>{let data={};try{data=JSON.parse(xhr.responseText)}catch(_){} 
         if(xhr.status>=200&&xhr.status<300) resolve(data);
