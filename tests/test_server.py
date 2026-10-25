@@ -78,7 +78,7 @@ class QRDropHTTPTests(unittest.TestCase):
         while offset < len(payload):
             chunk = payload[offset:offset + 4 * 1024 * 1024]
             path = "/api/upload/chunk?id=" + upload_id + "&offset=" + str(offset) + "&token=" + self.token
-            with self.request(path, "POST", chunk) as response: result = json.load(response)
+            with self.request(path, "POST", chunk, {"X-QRDrop-Hash": hashlib.sha256(chunk).hexdigest()}) as response: result = json.load(response)
             offset = result["offset"]
         with self.request(finish, "POST") as response: result = json.load(response)
         self.assertEqual(result["sha256"], hashlib.sha256(payload).hexdigest())
