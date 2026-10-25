@@ -18,7 +18,7 @@
     <section class="hero">
       <div class="eyebrow">OFFLINE FILE TRANSFER</div>
       <h1>Move a file with a screen and a camera.</h1>
-      <p class="hero-copy">QRDrop turns your file into a series of QR codes. Show them on one device and scan them with the other. The file travels optically, not through a server.</p>
+      <p class="hero-copy">Choose QR codes for a transfer with no network, or Local Network to move files quickly over Wi-Fi without internet or cloud storage.</p>
     </section>
     <section class="privacy-note" aria-label="Privacy promise">
       <div class="privacy-note-title">No cloud storage. No automatic copies.</div>
@@ -32,7 +32,8 @@
     <section class="workspace" aria-label="File transfer">
       <div class="mode-tabs" role="tablist" aria-label="Choose transfer direction">
         <button type="button" class="mode-tab active" id="send-tab" role="tab" aria-controls="send-panel" aria-selected="true">Send</button>
-        <button type="button" class="mode-tab" id="receive-tab" role="tab" aria-controls="receive-panel" aria-selected="false">Receive</button>
+        <button type="button" class="mode-tab" id="receive-tab" role="tab" aria-controls="receive-panel" aria-selected="false">QR Receive</button>
+        <button type="button" class="mode-tab" id="local-tab" role="tab" aria-controls="local-panel" aria-selected="false">Local Network</button>
       </div>
       <section id="send-panel" class="panel" role="tabpanel" aria-labelledby="send-tab">
         <div class="panel-heading"><div><span class="step">01 · SENDER</span><h2>Choose a file</h2><p>The file is read in this browser and split into QR frames. It is not uploaded anywhere.</p></div></div>
@@ -54,6 +55,20 @@
         <p class="hint">Keep this screen bright and visible to the receiving camera. Leave the QR stream running until the receiver has collected every frame. Fast mode uses larger QR payloads and a shorter frame interval. If scanning misses frames, increase the interval or move the screens closer.</p>
       </section>
 
+
+      <section id="local-panel" class="panel hidden" role="tabpanel" aria-labelledby="local-tab">
+        <div class="panel-heading"><div><span class="step">03 · LOCAL NETWORK</span><h2>Transfer over Wi-Fi, without internet</h2><p>Upload a file to the QRDrop server running on this device, then open the same local address on another device to download it. Traffic stays on your local network.</p></div></div>
+        <div class="local-notice"><strong>Important:</strong> this mode works only when QRDrop is opened from the Python local server, not from the public GitHub Pages website. The hosting device must stay on and both devices must be able to reach it on the same Wi-Fi or hotspot.</div>
+        <label class="file-picker" for="local-file-input"><span class="picker-icon" aria-hidden="true">＋</span><span class="picker-copy"><strong id="local-file-label">Choose a file to upload</strong><small>Files are stored in the server's local received folder until deleted.</small></span><span class="picker-action">Browse</span></label>
+        <input id="local-file-input" type="file">
+        <div class="progress-meta"><span id="local-status" aria-live="polite">Checking local server…</span><span id="local-percent">0%</span></div>
+        <div class="progress-track" aria-hidden="true"><div id="local-progress" class="progress-fill"></div></div>
+        <div class="button-row"><button type="button" id="local-upload" class="primary" disabled>Upload to this device</button><button type="button" id="local-refresh" class="secondary">Refresh files</button></div>
+        <div class="local-address"><small>Share this local address with the other device</small><strong id="local-host">Checking server address…</strong><button type="button" id="local-copy" class="secondary" disabled>Copy address</button></div>
+        <div class="local-files-heading"><h3>Files on this server</h3><span id="local-file-count">0 files</span></div>
+        <div id="local-files" class="local-files"><p class="hint">Files will appear here when the server is reachable.</p></div>
+        <p class="hint">No cloud is involved, but this is a network transfer, not a radio-free transfer: Wi-Fi or a phone hotspot must be enabled. Avoid public networks; anyone with access to your session link may be able to transfer files. Stop the server when finished.</p>
+      </section>
       <section id="receive-panel" class="panel hidden" role="tabpanel" aria-labelledby="receive-tab">
         <div class="panel-heading"><div><span class="step">02 · RECEIVER</span><h2>Scan the QR codes</h2><p>Point the camera at the sender’s screen. QRDrop collects the frames and checks the reconstructed file before offering it to you.</p></div></div>
         <div class="camera-stage">
