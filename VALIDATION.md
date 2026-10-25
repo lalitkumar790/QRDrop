@@ -29,3 +29,11 @@
 - At 512 bytes per frame and 700 ms per frame, a 1 MiB file needs about 2,048 frames or 24 minutes per cycle before camera-scanning overhead.
 - The received file is held in browser memory until explicitly saved or the page is closed/reloaded.
 - QR frames are not encrypted; anyone who captures the full sequence may reconstruct the file.
+
+## Resumable upload implementation
+- Local-network uploads are sent in chunks of up to 4 MiB.
+- The server acknowledges offsets; retries check server state before resending to avoid appending duplicate bytes after a lost response.
+- Partial chunk writes are truncated back to the last acknowledged offset.
+- Finalization checks the declared byte count and computes SHA-256 before publishing the completed file.
+- Session metadata is held in memory and expires after six hours; reselecting the same file in the same tab can resume while the server process and session remain available.
+- Regression tests cover multi-chunk integrity, incorrect offsets, and incomplete finalization. Browser and real network-interruption testing remains outstanding.
