@@ -225,7 +225,10 @@ class Handler(BaseHTTPRequestHandler):
                 if offset + length > session["size"]:
                     return self.json(413, {"error": "Chunk exceeds declared file size"})
                 try:
-                    with session["temp"].open("ab") as out:
+                    with session["temp"].open("r+b") as out:
+                        # A dropped request must not leave partial bytes ahead of the acknowledged offset.
+                        out.truncate(offset)
+                        out.seek(offset)
                         remaining = length
                         while remaining:
                             chunk = self.rfile.read(min(1024 * 1024, remaining))
@@ -239,6 +242,11 @@ class Handler(BaseHTTPRequestHandler):
                     session["expires"] = time.time() + UPLOAD_SESSION_TTL
                     return self.json(200, {"ok": True, "offset": session["offset"], "size": session["size"]})
                 except Exception as exc:
+                    try:
+                        with session["temp"].open("r+b") as out:
+                            out.truncate(session["offset"])
+                    except OSError:
+                        pass
                     return self.json(400, {"error": "Chunk write failed: " + str(exc)[:120], "offset": session["offset"]})
 
         if path == "/api/upload/finish":
