@@ -26,7 +26,7 @@ Open the hosted app: https://lalitkumar790.github.io/QRDrop/
 
 - The first website load needs internet to download the app. After the service worker caches its files, the app can be used offline; test this on your actual devices before relying on it.
 - Receiving requires HTTPS (GitHub Pages supplies it), camera permission, `getUserMedia`, and `BarcodeDetector` support. Browser support varies; recent Android Chrome is the primary target.
-- Keep the sender stream running until all frames have been collected. At 512 bytes of file data per frame and a 700 ms frame interval, 1 MiB can take about 24 minutes for one full cycle, excluding camera scanning overhead.
+- Keep the sender stream running until all frames have been collected. Fast-transfer defaults use about 1,200 bytes of file data per frame and a 250 ms frame interval. This substantially reduces frame count and display time; actual speed depends on camera focus, screen brightness, browser performance, and missed frames. If the receiver misses frames, increase the frame interval in the sender controls.
 - The received file lives in browser memory until explicitly saved. After saving, the browser/operating system handles the download location.
 - QRDrop is a prototype and has not been tested across every device/browser combination or undergone a production security review.
 
