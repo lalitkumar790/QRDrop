@@ -224,18 +224,21 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json(409, {"error": "Chunk offset mismatch", "offset": session["offset"]})
                 if offset + length > session["size"]:
                     return self.json(413, {"error": "Chunk exceeds declared file size"})
+                expected_hash = self.headers.get("X-Chunk-SHA256", "").lower()
+                if not re.fullmatch(r"[0-9a-f]{64}", expected_hash):
+                    return self.json(400, {"error": "A valid X-Chunk-SHA256 header is required"})
                 try:
+                    payload = self.rfile.read(length) if length else b""
+                    if len(payload) != length:
+                        raise ConnectionError("Connection ended before the chunk arrived")
+                    actual_hash = hashlib.sha256(payload).hexdigest()
+                    if not secrets.compare_digest(actual_hash, expected_hash):
+                        return self.json(422, {"error": "Chunk integrity check failed", "offset": session["offset"]})
                     with session["temp"].open("r+b") as out:
-                        # A dropped request must not leave partial bytes ahead of the acknowledged offset.
+                        # Keep only acknowledged bytes if a previous write was interrupted.
                         out.truncate(offset)
                         out.seek(offset)
-                        remaining = length
-                        while remaining:
-                            chunk = self.rfile.read(min(1024 * 1024, remaining))
-                            if not chunk:
-                                raise ConnectionError("Connection ended before the chunk arrived")
-                            out.write(chunk)
-                            remaining -= len(chunk)
+                        out.write(payload)
                         out.flush()
                         os.fsync(out.fileno())
                     session["offset"] += length
