@@ -16,6 +16,8 @@ Open the hosted app: https://lalitkumar790.github.io/QRDrop/
 
 ## Local Network transfer (no internet required)
 
+Uploads are sent in 4 MiB chunks with acknowledged offsets, retry handling, and a final SHA-256 digest. If the connection drops or the page reloads, select the same file again in the same tab to resume while the server session remains active (up to six hours). The server only lists a file after all declared bytes arrive and finalization succeeds.
+
 1. Connect both devices to the same Wi-Fi network or to a phone hotspot. Internet access is not required; the devices just need local connectivity. Some managed or guest Wi-Fi networks block device-to-device traffic.
 2. On the hosting device, install Python 3 and run `python server.py --host 0.0.0.0 --port 8765`.
 3. Open the pairing URL printed by the server on the host, then share that URL only with the intended receiving device.

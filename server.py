@@ -18,6 +18,9 @@ STARTED = time.time()
 lock = threading.Lock()
 download_tickets = {}
 DOWNLOAD_TICKET_TTL = 10 * 60
+upload_sessions = {}
+UPLOAD_SESSION_TTL = 6 * 60 * 60
+MAX_CHUNK_BYTES = 4 * 1024 * 1024
 
 def local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -129,6 +132,16 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not self.authorized():
             return self.json(401, {"error": "Invalid or missing session token. Open QRDrop using the pairing link."})
+        if path == "/api/upload/status":
+            upload_id = parse_qs(parsed.query).get("id", [""])[0]
+            with lock:
+                session = upload_sessions.get(upload_id)
+                if not session or session["expires"] < time.time():
+                    if session:
+                        upload_sessions.pop(upload_id, None)
+                        session["temp"].unlink(missing_ok=True)
+                    return self.json(404, {"error": "Upload session expired or not found"})
+                return self.json(200, {"id": upload_id, "offset": session["offset"], "size": session["size"]})
         if path == "/api/info":
             host = f"{local_ip()}:{self.server.server_port}"
             return self.json(200, {"name": socket.gethostname(), "host": host, "token": TOKEN, "uptime": int(time.time()-STARTED)})
@@ -161,10 +174,113 @@ class Handler(BaseHTTPRequestHandler):
         return self.json(404, {"error": "Not found"})
 
     def do_POST(self):
-        if urlparse(self.path).path != "/api/upload":
+        parsed = urlparse(self.path)
+        path = parsed.path
+        if path not in ("/api/upload", "/api/upload/start", "/api/upload/chunk", "/api/upload/finish"):
             return self.json(404, {"error": "Not found"})
         if not self.authorized():
             return self.json(401, {"error": "Invalid or missing session token"})
+
+        if path == "/api/upload/start":
+            try:
+                size = int(parse_qs(parsed.query).get("size", ["-1"])[0])
+            except ValueError:
+                size = -1
+            if size < 0 or size > MAX_FILE_BYTES:
+                return self.json(413, {"error": "Invalid file size or file exceeds 8 GiB per-file limit"})
+            name = safe_name(parse_qs(parsed.query).get("name", [""])[0])
+            if not name:
+                return self.json(400, {"error": "A filename is required"})
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            upload_id = secrets.token_urlsafe(18)
+            temp = DATA_DIR / ("." + secrets.token_hex(12) + ".upload")
+            try:
+                temp.touch(exist_ok=False)
+            except OSError:
+                return self.json(500, {"error": "Could not create temporary upload"})
+            with lock:
+                now = time.time()
+                for old_id, old in list(upload_sessions.items()):
+                    if old["expires"] < now:
+                        upload_sessions.pop(old_id, None)
+                        old["temp"].unlink(missing_ok=True)
+                upload_sessions[upload_id] = {"name": name, "size": size, "offset": 0, "temp": temp, "expires": now + UPLOAD_SESSION_TTL}
+            return self.json(201, {"id": upload_id, "offset": 0, "size": size, "chunk_size": MAX_CHUNK_BYTES})
+
+        if path == "/api/upload/chunk":
+            upload_id = parse_qs(parsed.query).get("id", [""])[0]
+            try:
+                offset = int(parse_qs(parsed.query).get("offset", ["-1"])[0])
+                length = int(self.headers.get("Content-Length", "-1"))
+            except ValueError:
+                offset, length = -1, -1
+            if length < 0 or length > MAX_CHUNK_BYTES:
+                return self.json(413, {"error": "Chunk must be at most 4 MiB"})
+            with lock:
+                session = upload_sessions.get(upload_id)
+                if not session or session["expires"] < time.time():
+                    return self.json(404, {"error": "Upload session expired or not found"})
+                if offset != session["offset"]:
+                    return self.json(409, {"error": "Chunk offset mismatch", "offset": session["offset"]})
+                if offset + length > session["size"]:
+                    return self.json(413, {"error": "Chunk exceeds declared file size"})
+                expected_hash = self.headers.get("X-QRDrop-Hash", "").lower()
+                if not re.fullmatch(r"[0-9a-f]{64}", expected_hash):
+                    return self.json(400, {"error": "A valid X-QRDrop-Hash header is required"})
+                try:
+                    payload = self.rfile.read(length) if length else b""
+                    if len(payload) != length:
+                        raise ConnectionError("Connection ended before the chunk arrived")
+                    actual_hash = hashlib.sha256(payload).hexdigest()
+                    if not secrets.compare_digest(actual_hash, expected_hash):
+                        return self.json(422, {"error": "Chunk integrity check failed", "offset": session["offset"]})
+                    with session["temp"].open("r+b") as out:
+                        # Keep only acknowledged bytes if a previous write was interrupted.
+                        out.truncate(offset)
+                        out.seek(offset)
+                        out.write(payload)
+                        out.flush()
+                        os.fsync(out.fileno())
+                    session["offset"] += length
+                    session["expires"] = time.time() + UPLOAD_SESSION_TTL
+                    return self.json(200, {"ok": True, "offset": session["offset"], "size": session["size"]})
+                except Exception as exc:
+                    try:
+                        with session["temp"].open("r+b") as out:
+                            out.truncate(session["offset"])
+                    except OSError:
+                        pass
+                    return self.json(400, {"error": "Chunk write failed: " + str(exc)[:120], "offset": session["offset"]})
+
+        if path == "/api/upload/finish":
+            upload_id = parse_qs(parsed.query).get("id", [""])[0]
+            with lock:
+                session = upload_sessions.get(upload_id)
+                if not session or session["expires"] < time.time():
+                    return self.json(404, {"error": "Upload session expired or not found"})
+                if session["offset"] != session["size"]:
+                    return self.json(409, {"error": "Upload is incomplete", "offset": session["offset"], "size": session["size"]})
+                try:
+                    actual_size = session["temp"].stat().st_size
+                    if actual_size != session["size"]:
+                        return self.json(409, {"error": "Temporary file size mismatch"})
+                    digest = sha256_file(session["temp"])
+                    target = unique_path(session["name"])
+                    os.link(session["temp"], target)
+                    session["temp"].unlink()
+                    upload_sessions.pop(upload_id, None)
+                    return self.json(201, {"ok": True, "name": target.name, "size": actual_size, "sha256": digest})
+                except OSError as exc:
+                    return self.json(500, {"error": "Could not finalize upload: " + str(exc)[:120]})
+
+        # Backwards-compatible single-request upload endpoint.
+        try:
+            length = int(self.headers.get("Content-Length", "-1"))
+        except ValueError:
+            length = -1
+        if length < 0 or length > MAX_FILE_BYTES:
+            return self.json(413, {"error": "Invalid file size or file exceeds 8 GiB per-file limit"})
+        raw_name = parse_qs(parsed.query).get("name", [""])[0]
         try:
             length = int(self.headers.get("Content-Length", "-1"))
         except ValueError:
