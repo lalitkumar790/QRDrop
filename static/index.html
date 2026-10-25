@@ -43,7 +43,7 @@
         </label>
         <input id="file-input" type="file">
         <div id="file-info" class="file-info hidden"></div>
-        <div class="settings-row"><label for="frame-delay">Frame interval <span id="delay-label">700 ms</span></label><input id="frame-delay" type="range" min="250" max="1500" step="50" value="700"></div>
+        <div class="settings-row"><label for="frame-delay">Frame interval <span id="delay-label">250 ms</span></label><input id="frame-delay" type="range" min="120" max="1000" step="10" value="250"></div>
         <div class="qr-stage">
           <div id="qr-placeholder" class="qr-placeholder"><span aria-hidden="true">▦</span><strong>Your QR codes will appear here</strong><small>Choose a file to prepare the transfer.</small></div>
           <div id="qr-display" class="qr-display hidden"><div id="qrcode" aria-label="QR transfer frame"></div><div class="frame-count" id="frame-count">Frame 0 / 0</div></div>
@@ -51,7 +51,7 @@
         <div class="progress-meta"><span id="send-status" aria-live="polite">Choose a file to get started.</span><span id="send-percent">0%</span></div>
         <div class="progress-track" aria-hidden="true"><div id="send-progress" class="progress-fill"></div></div>
         <div class="button-row"><button type="button" id="start-send" class="primary" disabled>Start QR stream</button><button type="button" id="stop-send" class="secondary" disabled>Pause</button></div>
-        <p class="hint">Keep this screen bright and visible to the receiving camera. Leave the QR stream running until the receiver has collected every frame. Large files can take a while.</p>
+        <p class="hint">Keep this screen bright and visible to the receiving camera. Leave the QR stream running until the receiver has collected every frame. Fast mode uses larger QR payloads and a shorter frame interval. If scanning misses frames, increase the interval or move the screens closer.</p>
       </section>
 
       <section id="receive-panel" class="panel hidden" role="tabpanel" aria-labelledby="receive-tab">
