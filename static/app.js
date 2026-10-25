@@ -176,10 +176,11 @@
       while(offset<file.size) {
         const chunkStart=offset;
         const chunk=file.slice(chunkStart,Math.min(chunkStart+chunkSize,file.size));
+        const chunkHash=hex(await crypto.subtle.digest("SHA-256",await chunk.arrayBuffer()));
         let accepted=false;
         for(let attempt=0;attempt<4&&!accepted;attempt++) {
           try {
-            const result=await sendUploadChunk("/api/upload/chunk?id="+encodeURIComponent(uploadId)+"&offset="+chunkStart,chunk,loaded=>{
+            const result=await sendUploadChunk("/api/upload/chunk?id="+encodeURIComponent(uploadId)+"&offset="+chunkStart,chunk,chunkHash,loaded=>{
               const pct=Math.min(99,Math.floor((chunkStart+loaded)/Math.max(file.size,1)*100));
               el("local-percent").textContent=pct+"%"; el("local-progress").style.width=pct+"%";
             });
@@ -201,7 +202,7 @@
       }
       const result=await localJson("/api/upload/finish?id="+encodeURIComponent(uploadId),{method:"POST"});
       sessionStorage.removeItem(sessionKey);
-      el("local-status").textContent="Uploaded · SHA-256 verified · "+result.name;
+      el("local-status").textContent="Upload complete · SHA-256 recorded · "+result.name;
       localFile=null; el("local-file-input").value=""; el("local-file-label").textContent="Choose a file to upload";
       el("local-percent").textContent="100%"; el("local-progress").style.width="100%";
       await refreshLocalFiles();
