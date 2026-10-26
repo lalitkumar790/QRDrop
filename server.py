@@ -239,7 +239,7 @@ class Handler(BaseHTTPRequestHandler):
             if not session:
                 return self.json(404, {"error": "Upload session expired or not found"})
             with session["session_lock"]:
-                if session["expires"] < time.time():
+                if session.get("finished") or session["expires"] < time.time():
                     return self.json(404, {"error": "Upload session expired or not found"})
                 if offset != session["offset"]:
                     return self.json(409, {"error": "Chunk offset mismatch", "offset": session["offset"]})
@@ -276,7 +276,12 @@ class Handler(BaseHTTPRequestHandler):
             upload_id = parse_qs(parsed.query).get("id", [""])[0]
             with lock:
                 session = upload_sessions.get(upload_id)
-                if not session or session["expires"] < time.time():
+            if not session:
+                return self.json(404, {"error": "Upload session expired or not found"})
+            # Hashing a large file can take time; hold only this session's lock so
+            # other devices can keep transferring while this file is finalized.
+            with session["session_lock"]:
+                if session.get("finished") or session["expires"] < time.time():
                     return self.json(404, {"error": "Upload session expired or not found"})
                 if session["offset"] != session["size"]:
                     return self.json(409, {"error": "Upload is incomplete", "offset": session["offset"], "size": session["size"]})
@@ -285,12 +290,16 @@ class Handler(BaseHTTPRequestHandler):
                     if actual_size != session["size"]:
                         return self.json(409, {"error": "Temporary file size mismatch"})
                     digest = sha256_file(session["temp"])
-                    target = unique_path(session["name"])
-                    os.link(session["temp"], target)
-                    session["temp"].unlink()
-                    target_stat = target.stat()
-                    file_hash_cache[target.name] = {"size": target_stat.st_size, "mtime_ns": target_stat.st_mtime_ns, "sha256": digest}
-                    upload_sessions.pop(upload_id, None)
+                    with lock:
+                        # Registry lock protects unique-name selection, cache, and removal,
+                        # but is not held during the potentially slow whole-file hash.
+                        target = unique_path(session["name"])
+                        os.link(session["temp"], target)
+                        session["temp"].unlink()
+                        target_stat = target.stat()
+                        file_hash_cache[target.name] = {"size": target_stat.st_size, "mtime_ns": target_stat.st_mtime_ns, "sha256": digest}
+                        session["finished"] = True
+                        upload_sessions.pop(upload_id, None)
                     return self.json(201, {"ok": True, "name": target.name, "size": actual_size, "sha256": digest})
                 except OSError as exc:
                     return self.json(500, {"error": "Could not finalize upload: " + str(exc)[:120]})
