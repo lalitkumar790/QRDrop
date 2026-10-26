@@ -121,12 +121,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "application/octet-stream")
                 self.send_header("Content-Length", str(size))
                 self.send_header("Content-Disposition", "attachment; filename*=UTF-8''"+quote(target.name))
+                self.send_header("Accept-Ranges", "bytes")
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("Referrer-Policy", "no-referrer")
                 self.end_headers()
                 with target.open("rb") as f:
-                    for chunk in iter(lambda: f.read(1024*1024), b""):
+                    for chunk in iter(lambda: f.read(4*1024*1024), b""):
                         self.wfile.write(chunk)
             except (OSError, BrokenPipeError):
                 pass
@@ -142,7 +143,7 @@ class Handler(BaseHTTPRequestHandler):
                         upload_sessions.pop(upload_id, None)
                         session["temp"].unlink(missing_ok=True)
                     return self.json(404, {"error": "Upload session expired or not found"})
-                return self.json(200, {"id": upload_id, "offset": session["offset"], "size": session["size"]})
+                return self.json(200, {"id": upload_id, "offset": session["offset"], "size": session["size"], "chunk_size": MAX_CHUNK_BYTES, "max_file_bytes": MAX_FILE_BYTES})
         if path == "/api/info":
             host = f"{local_ip()}:{self.server.server_port}"
             return self.json(200, {"name": socket.gethostname(), "host": host, "token": TOKEN, "uptime": int(time.time()-STARTED), "max_file_bytes": MAX_FILE_BYTES, "chunk_size": MAX_CHUNK_BYTES, "free_bytes": shutil.disk_usage(DATA_DIR).free})
@@ -213,7 +214,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(500, {"error": "Could not create temporary upload"})
             with lock:
                 upload_sessions[upload_id] = {"name": name, "size": size, "offset": 0, "temp": temp, "expires": time.time() + UPLOAD_SESSION_TTL, "session_lock": threading.Lock()}
-            return self.json(201, {"id": upload_id, "offset": 0, "size": size, "chunk_size": MAX_CHUNK_BYTES})
+            return self.json(201, {"id": upload_id, "offset": 0, "size": size, "chunk_size": MAX_CHUNK_BYTES, "max_file_bytes": MAX_FILE_BYTES})
 
         if path == "/api/upload/chunk":
             upload_id = parse_qs(parsed.query).get("id", [""])[0]
