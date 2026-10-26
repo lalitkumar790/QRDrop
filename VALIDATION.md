@@ -47,3 +47,4 @@
 - Download streaming uses larger 4 MiB reads to reduce Python-level write overhead.
 - New regression tests assert the 50 GiB default limit and 8 MiB chunk setting, and reject requests above the configured maximum without allocating the requested file size.
 - End-to-end large-file throughput and real Wi-Fi/hotspot compatibility still require testing on actual devices and filesystems.
+- SHA-256 digests for completed files are cached against file size and nanosecond modification time, avoiding a full multi-gigabyte disk read on every file-list refresh; newly uploaded files seed the cache with their already-computed digest.
