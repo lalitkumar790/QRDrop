@@ -223,10 +223,15 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 offset, length = -1, -1
             if length < 0 or length > MAX_CHUNK_BYTES:
-                return self.json(413, {"error": "Chunk must be at most 4 MiB"})
+                return self.json(413, {"error": "Chunk must be at most " + str(MAX_CHUNK_BYTES // (1024 * 1024)) + " MiB"})
+            # Look up quickly under the registry lock, then serialize only requests
+            # for this upload. Other clients can continue uploading concurrently.
             with lock:
                 session = upload_sessions.get(upload_id)
-                if not session or session["expires"] < time.time():
+            if not session:
+                return self.json(404, {"error": "Upload session expired or not found"})
+            with session["session_lock"]:
+                if session["expires"] < time.time():
                     return self.json(404, {"error": "Upload session expired or not found"})
                 if offset != session["offset"]:
                     return self.json(409, {"error": "Chunk offset mismatch", "offset": session["offset"]})
@@ -243,7 +248,6 @@ class Handler(BaseHTTPRequestHandler):
                     if not secrets.compare_digest(actual_hash, expected_hash):
                         return self.json(422, {"error": "Chunk integrity check failed", "offset": session["offset"]})
                     with session["temp"].open("r+b") as out:
-                        # Keep only acknowledged bytes if a previous write was interrupted.
                         out.truncate(offset)
                         out.seek(offset)
                         out.write(payload)
