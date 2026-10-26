@@ -31,10 +31,19 @@
 - QR frames are not encrypted; anyone who captures the full sequence may reconstruct the file.
 
 ## Resumable upload implementation
-- Local-network uploads are sent in chunks of up to 4 MiB.
-- Each 4 MiB-or-smaller chunk carries a SHA-256 digest computed by the browser; the server compares it before acknowledging the chunk.
+- Local-network uploads support a configurable per-file limit (50 GiB by default) and use 8 MiB chunks by default; both are configurable at server startup.
+- Each chunk carries a SHA-256 digest computed by the browser. A pure-JavaScript SHA-256 fallback supports HTTP pages served from private LAN IPs where Web Crypto is unavailable.
 - The server acknowledges offsets; retries check server state before resending to avoid appending duplicate bytes after a lost response.
 - Partial chunk writes are truncated back to the last acknowledged offset.
 - Finalization checks the declared byte count and computes SHA-256 before publishing the completed file.
 - Session metadata is held in memory and expires after six hours; reselecting the same file in the same tab can resume while the server process and session remain available.
 - Regression tests cover multi-chunk integrity, corrupted chunks, incorrect offsets, and incomplete finalization. Browser and real network-interruption testing remains outstanding.
+
+## Large-file LAN improvements
+- Server startup options: `--max-file-size-gib` (default 50), `--chunk-size-mib` (default 8, allowed 1-32), and `--reserve-free-mib` (default 256).
+- The server advertises its configured file/chunk limits and free disk space to the UI.
+- Upload starts are rejected if the requested file plus active upload reservations and the free-space safety reserve exceed available disk space.
+- Upload chunks use per-session locks so a slow client does not hold the global upload registry lock and block unrelated transfers.
+- Download streaming uses larger 4 MiB reads to reduce Python-level write overhead.
+- New regression tests assert the 50 GiB default limit and 8 MiB chunk setting, and reject requests above the configured maximum without allocating the requested file size.
+- End-to-end large-file throughput and real Wi-Fi/hotspot compatibility still require testing on actual devices and filesystems.
