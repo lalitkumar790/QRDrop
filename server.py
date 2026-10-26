@@ -3,7 +3,7 @@
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 from pathlib import Path
-import argparse, hashlib, json, mimetypes, os, secrets, socket, sys, threading, time, re, webbrowser
+import argparse, hashlib, json, mimetypes, os, secrets, socket, sys, threading, time, re, webbrowser, shutil
 try:
     import qrcode
 except ImportError:
@@ -12,15 +12,17 @@ except ImportError:
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
 DATA_DIR = APP_DIR / "received"
-MAX_FILE_BYTES = 8 * 1024 * 1024 * 1024  # 8 GiB per file; practical limits depend on disk/browser.
+MAX_FILE_BYTES = 50 * 1024 * 1024 * 1024  # Default 50 GiB per file; configurable at launch.
 TOKEN = secrets.token_urlsafe(24)
 STARTED = time.time()
 lock = threading.Lock()
 download_tickets = {}
+file_hash_cache = {}
 DOWNLOAD_TICKET_TTL = 10 * 60
 upload_sessions = {}
 UPLOAD_SESSION_TTL = 6 * 60 * 60
-MAX_CHUNK_BYTES = 4 * 1024 * 1024
+MAX_CHUNK_BYTES = 8 * 1024 * 1024
+RESERVE_FREE_BYTES = 256 * 1024 * 1024
 
 def local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -59,7 +61,7 @@ def unique_path(name):
         n += 1
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "QRDrop/1.1"
+    server_version = "QRDrop/1.3.0"
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *args):
@@ -103,7 +105,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/style.css":
             return self.send_bytes(200, (STATIC_DIR / "style.css").read_bytes(), "text/css; charset=utf-8")
         if path == "/api/health":
-            return self.json(200, {"ok": True, "app": "QRDrop", "version": "1.2.0"})
+            return self.json(200, {"ok": True, "app": "QRDrop", "version": "1.3.0"})
         if path == "/download":
             ticket = parse_qs(parsed.query).get("ticket", [""])[0]
             with lock:
@@ -125,7 +127,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Referrer-Policy", "no-referrer")
                 self.end_headers()
                 with target.open("rb") as f:
-                    for chunk in iter(lambda: f.read(1024*1024), b""):
+                    for chunk in iter(lambda: f.read(4*1024*1024), b""):
                         self.wfile.write(chunk)
             except (OSError, BrokenPipeError):
                 pass
@@ -141,10 +143,10 @@ class Handler(BaseHTTPRequestHandler):
                         upload_sessions.pop(upload_id, None)
                         session["temp"].unlink(missing_ok=True)
                     return self.json(404, {"error": "Upload session expired or not found"})
-                return self.json(200, {"id": upload_id, "offset": session["offset"], "size": session["size"]})
+                return self.json(200, {"id": upload_id, "offset": session["offset"], "size": session["size"], "chunk_size": MAX_CHUNK_BYTES, "max_file_bytes": MAX_FILE_BYTES})
         if path == "/api/info":
             host = f"{local_ip()}:{self.server.server_port}"
-            return self.json(200, {"name": socket.gethostname(), "host": host, "token": TOKEN, "uptime": int(time.time()-STARTED)})
+            return self.json(200, {"name": socket.gethostname(), "host": host, "token": TOKEN, "uptime": int(time.time()-STARTED), "max_file_bytes": MAX_FILE_BYTES, "chunk_size": MAX_CHUNK_BYTES, "free_bytes": shutil.disk_usage(DATA_DIR).free})
         if path == "/api/qr.png":
             if qrcode is None:
                 return self.json(503, {"error": "QR generation requires the 'qrcode[pil]' package. Run install.bat or pip install -r requirements.txt."})
@@ -161,13 +163,20 @@ class Handler(BaseHTTPRequestHandler):
                 if p.is_file() and not p.name.startswith("."):
                     try:
                         st = p.stat()
+                        with lock:
+                            cached = file_hash_cache.get(p.name)
+                            digest = cached["sha256"] if cached and cached["size"] == st.st_size and cached["mtime_ns"] == st.st_mtime_ns else None
+                        if digest is None:
+                            digest = sha256_file(p)
+                            with lock:
+                                file_hash_cache[p.name] = {"size": st.st_size, "mtime_ns": st.st_mtime_ns, "sha256": digest}
                         ticket = secrets.token_urlsafe(24)
                         with lock:
                             now = time.time()
                             for old_ticket in [k for k, v in download_tickets.items() if v["expires"] < now]:
                                 download_tickets.pop(old_ticket, None)
                             download_tickets[ticket] = {"name": p.name, "expires": now + DOWNLOAD_TICKET_TTL}
-                        rows.append({"name": p.name, "size": st.st_size, "sha256": sha256_file(p),
+                        rows.append({"name": p.name, "size": st.st_size, "sha256": digest,
                                      "modified": int(st.st_mtime), "url": "/download?ticket="+quote(ticket)})
                     except OSError: pass
             return self.json(200, {"files": rows})
@@ -187,25 +196,31 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 size = -1
             if size < 0 or size > MAX_FILE_BYTES:
-                return self.json(413, {"error": "Invalid file size or file exceeds 8 GiB per-file limit"})
+                return self.json(413, {"error": "Invalid file size or file exceeds configured per-file limit"})
             name = safe_name(parse_qs(parsed.query).get("name", [""])[0])
             if not name:
                 return self.json(400, {"error": "A filename is required"})
             DATA_DIR.mkdir(parents=True, exist_ok=True)
-            upload_id = secrets.token_urlsafe(18)
-            temp = DATA_DIR / ("." + secrets.token_hex(12) + ".upload")
-            try:
-                temp.touch(exist_ok=False)
-            except OSError:
-                return self.json(500, {"error": "Could not create temporary upload"})
+            # Check free space and register the reservation under one lock so
+            # concurrent upload starts cannot overbook the same disk capacity.
             with lock:
                 now = time.time()
                 for old_id, old in list(upload_sessions.items()):
                     if old["expires"] < now:
                         upload_sessions.pop(old_id, None)
                         old["temp"].unlink(missing_ok=True)
-                upload_sessions[upload_id] = {"name": name, "size": size, "offset": 0, "temp": temp, "expires": now + UPLOAD_SESSION_TTL}
-            return self.json(201, {"id": upload_id, "offset": 0, "size": size, "chunk_size": MAX_CHUNK_BYTES})
+                pending_bytes = sum(max(0, item["size"] - item["offset"]) for item in upload_sessions.values())
+                free_bytes = shutil.disk_usage(DATA_DIR).free
+                if free_bytes < size + pending_bytes + RESERVE_FREE_BYTES:
+                    return self.json(507, {"error": "Not enough free disk space for this upload plus the safety reserve", "free_bytes": free_bytes, "requested_bytes": size, "reserved_bytes": pending_bytes, "reserve_bytes": RESERVE_FREE_BYTES})
+                upload_id = secrets.token_urlsafe(18)
+                temp = DATA_DIR / ("." + secrets.token_hex(12) + ".upload")
+                try:
+                    temp.touch(exist_ok=False)
+                except OSError:
+                    return self.json(500, {"error": "Could not create temporary upload"})
+                upload_sessions[upload_id] = {"name": name, "size": size, "offset": 0, "temp": temp, "expires": now + UPLOAD_SESSION_TTL, "session_lock": threading.Lock()}
+            return self.json(201, {"id": upload_id, "offset": 0, "size": size, "chunk_size": MAX_CHUNK_BYTES, "max_file_bytes": MAX_FILE_BYTES})
 
         if path == "/api/upload/chunk":
             upload_id = parse_qs(parsed.query).get("id", [""])[0]
@@ -215,10 +230,15 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 offset, length = -1, -1
             if length < 0 or length > MAX_CHUNK_BYTES:
-                return self.json(413, {"error": "Chunk must be at most 4 MiB"})
+                return self.json(413, {"error": "Chunk must be at most " + str(MAX_CHUNK_BYTES // (1024 * 1024)) + " MiB"})
+            # Look up quickly under the registry lock, then serialize only requests
+            # for this upload. Other clients can continue uploading concurrently.
             with lock:
                 session = upload_sessions.get(upload_id)
-                if not session or session["expires"] < time.time():
+            if not session:
+                return self.json(404, {"error": "Upload session expired or not found"})
+            with session["session_lock"]:
+                if session.get("finished") or session["expires"] < time.time():
                     return self.json(404, {"error": "Upload session expired or not found"})
                 if offset != session["offset"]:
                     return self.json(409, {"error": "Chunk offset mismatch", "offset": session["offset"]})
@@ -235,7 +255,6 @@ class Handler(BaseHTTPRequestHandler):
                     if not secrets.compare_digest(actual_hash, expected_hash):
                         return self.json(422, {"error": "Chunk integrity check failed", "offset": session["offset"]})
                     with session["temp"].open("r+b") as out:
-                        # Keep only acknowledged bytes if a previous write was interrupted.
                         out.truncate(offset)
                         out.seek(offset)
                         out.write(payload)
@@ -256,7 +275,12 @@ class Handler(BaseHTTPRequestHandler):
             upload_id = parse_qs(parsed.query).get("id", [""])[0]
             with lock:
                 session = upload_sessions.get(upload_id)
-                if not session or session["expires"] < time.time():
+            if not session:
+                return self.json(404, {"error": "Upload session expired or not found"})
+            # Hashing a large file can take time; hold only this session's lock so
+            # other devices can keep transferring while this file is finalized.
+            with session["session_lock"]:
+                if session.get("finished") or session["expires"] < time.time():
                     return self.json(404, {"error": "Upload session expired or not found"})
                 if session["offset"] != session["size"]:
                     return self.json(409, {"error": "Upload is incomplete", "offset": session["offset"], "size": session["size"]})
@@ -265,10 +289,16 @@ class Handler(BaseHTTPRequestHandler):
                     if actual_size != session["size"]:
                         return self.json(409, {"error": "Temporary file size mismatch"})
                     digest = sha256_file(session["temp"])
-                    target = unique_path(session["name"])
-                    os.link(session["temp"], target)
-                    session["temp"].unlink()
-                    upload_sessions.pop(upload_id, None)
+                    with lock:
+                        # Registry lock protects unique-name selection, cache, and removal,
+                        # but is not held during the potentially slow whole-file hash.
+                        target = unique_path(session["name"])
+                        os.link(session["temp"], target)
+                        session["temp"].unlink()
+                        target_stat = target.stat()
+                        file_hash_cache[target.name] = {"size": target_stat.st_size, "mtime_ns": target_stat.st_mtime_ns, "sha256": digest}
+                        session["finished"] = True
+                        upload_sessions.pop(upload_id, None)
                     return self.json(201, {"ok": True, "name": target.name, "size": actual_size, "sha256": digest})
                 except OSError as exc:
                     return self.json(500, {"error": "Could not finalize upload: " + str(exc)[:120]})
@@ -309,6 +339,8 @@ class Handler(BaseHTTPRequestHandler):
                 target = unique_path(name)
                 os.link(temp, target)
                 temp.unlink()
+                target_stat = target.stat()
+                file_hash_cache[target.name] = {"size": target_stat.st_size, "mtime_ns": target_stat.st_mtime_ns, "sha256": h.hexdigest()}
             return self.json(201, {"ok": True, "name": target.name, "size": length, "sha256": h.hexdigest()})
         except Exception as exc:
             try: temp.unlink(missing_ok=True)
@@ -326,6 +358,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(404, {"error": "File not found"})
         try:
             target.unlink()
+            with lock:
+                file_hash_cache.pop(name, None)
             return self.json(200, {"ok": True})
         except OSError as exc:
             return self.json(500, {"error": str(exc)})
@@ -335,15 +369,26 @@ def main():
     parser.add_argument("--host", default="0.0.0.0", help="Bind address (default: all local interfaces)")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--data-dir", default=str(APP_DIR / "received"))
+    parser.add_argument("--max-file-size-gib", type=float, default=50.0, help="Maximum individual file size in GiB (default: 50)")
+    parser.add_argument("--chunk-size-mib", type=int, default=8, help="Upload chunk size in MiB (default: 8; range 1-32)")
+    parser.add_argument("--reserve-free-mib", type=int, default=256, help="Keep this much disk space free when accepting uploads (default: 256)")
     parser.add_argument("--open-browser", action="store_true", help="Open the local session URL in the default browser")
     args = parser.parse_args()
-    global DATA_DIR
+    if args.max_file_size_gib <= 0 or not 1 <= args.chunk_size_mib <= 32 or args.reserve_free_mib < 0:
+        parser.error("--max-file-size-gib must be positive, --chunk-size-mib must be 1-32, and --reserve-free-mib must be nonnegative")
+    global DATA_DIR, MAX_FILE_BYTES, MAX_CHUNK_BYTES, RESERVE_FREE_BYTES
+    MAX_FILE_BYTES = int(args.max_file_size_gib * 1024 ** 3)
+    MAX_CHUNK_BYTES = args.chunk_size_mib * 1024 * 1024
+    RESERVE_FREE_BYTES = args.reserve_free_mib * 1024 * 1024
     DATA_DIR = Path(args.data_dir).expanduser().resolve()
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.daemon_threads = True
-    print("\nQRDrop — Universal Local File Transfer v1.1")
+    print("\nQRDrop — Universal Local File Transfer v1.3")
     print("=" * 42)
+    print(f"Maximum file size: {MAX_FILE_BYTES / (1024 ** 3):g} GiB")
+    print(f"Upload chunk size: {MAX_CHUNK_BYTES // (1024 * 1024)} MiB")
+    print(f"Free-space reserve: {RESERVE_FREE_BYTES // (1024 * 1024)} MiB")
     session_url = f"http://{local_ip()}:{args.port}/#token={quote(TOKEN)}"
     print(f"Open on this computer: {session_url}")
     print(f"Pairing link for the other device: {session_url}")

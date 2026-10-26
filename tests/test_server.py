@@ -39,6 +39,20 @@ class QRDropHTTPTests(unittest.TestCase):
     def test_health_is_public(self):
         with self.request("/api/health") as r:
             self.assertEqual(json.load(r)["ok"], True)
+    def test_info_advertises_large_file_and_chunk_limits(self):
+        with self.request("/api/info?token=" + self.token) as response:
+            info = json.load(response)
+        self.assertEqual(info["max_file_bytes"], 50 * 1024 ** 3)
+        self.assertEqual(info["chunk_size"], 8 * 1024 ** 2)
+        self.assertGreater(info["free_bytes"], 0)
+
+    def test_upload_start_rejects_files_above_configured_limit(self):
+        size = 51 * 1024 ** 3
+        path = "/api/upload/start?token=" + self.token + "&name=too-large.bin&size=" + str(size)
+        with self.assertRaises(urllib.error.HTTPError) as rejected:
+            self.request(path, "POST")
+        self.assertEqual(rejected.exception.code, 413)
+
     def test_api_requires_token(self):
         with self.assertRaises(urllib.error.HTTPError) as e: self.request("/api/files")
         self.assertEqual(e.exception.code,401)

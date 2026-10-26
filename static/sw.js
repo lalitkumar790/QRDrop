@@ -1,4 +1,4 @@
-const CACHE = "qrdrop-optical-v5";
+const CACHE = "qrdrop-optical-v6";
 const CORE = ["./", "./index.html", "./style.css", "./app.js", "./qrcode.min.js", "./manifest.webmanifest"];
 self.addEventListener("install", event => {
   event.waitUntil((async () => {
