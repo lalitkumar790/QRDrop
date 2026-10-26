@@ -232,8 +232,11 @@
         let accepted=false;
         for(let attempt=0;attempt<4&&!accepted;attempt++) {
           try {
+            const chunkStartedAt=performance.now();
             const result=await sendUploadChunk("/api/upload/chunk?id="+encodeURIComponent(uploadId)+"&offset="+chunkStart,chunk,chunkHash,loaded=>{
               const pct=Math.min(99,Math.floor((chunkStart+loaded)/Math.max(file.size,1)*100));
+              const seconds=Math.max((performance.now()-chunkStartedAt)/1000,0.001);
+              el("local-speed").textContent=formatBytes(loaded/seconds)+"/s · LAN upload";
               el("local-percent").textContent=pct+"%"; el("local-progress").style.width=pct+"%";
             });
             offset=result.offset; accepted=true;
@@ -256,7 +259,7 @@
       sessionStorage.removeItem(sessionKey);
       el("local-status").textContent="Upload complete · SHA-256 recorded · "+result.name;
       localFile=null; el("local-file-input").value=""; el("local-file-label").textContent="Choose a file to upload";
-      el("local-percent").textContent="100%"; el("local-progress").style.width="100%";
+      el("local-percent").textContent="100%"; el("local-progress").style.width="100%"; el("local-speed").textContent="Upload complete";
       await refreshLocalFiles();
     } catch(err) { el("local-status").textContent=(err.message||"Upload failed")+". Select the same file again to resume."; }
     finally { el("local-upload").disabled=!localFile || !localToken; }
