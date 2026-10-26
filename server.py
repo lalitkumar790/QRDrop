@@ -17,6 +17,7 @@ TOKEN = secrets.token_urlsafe(24)
 STARTED = time.time()
 lock = threading.Lock()
 download_tickets = {}
+file_hash_cache = {}
 DOWNLOAD_TICKET_TTL = 10 * 60
 upload_sessions = {}
 UPLOAD_SESSION_TTL = 6 * 60 * 60
@@ -163,13 +164,20 @@ class Handler(BaseHTTPRequestHandler):
                 if p.is_file() and not p.name.startswith("."):
                     try:
                         st = p.stat()
+                        with lock:
+                            cached = file_hash_cache.get(p.name)
+                            digest = cached["sha256"] if cached and cached["size"] == st.st_size and cached["mtime_ns"] == st.st_mtime_ns else None
+                        if digest is None:
+                            digest = sha256_file(p)
+                            with lock:
+                                file_hash_cache[p.name] = {"size": st.st_size, "mtime_ns": st.st_mtime_ns, "sha256": digest}
                         ticket = secrets.token_urlsafe(24)
                         with lock:
                             now = time.time()
                             for old_ticket in [k for k, v in download_tickets.items() if v["expires"] < now]:
                                 download_tickets.pop(old_ticket, None)
                             download_tickets[ticket] = {"name": p.name, "expires": now + DOWNLOAD_TICKET_TTL}
-                        rows.append({"name": p.name, "size": st.st_size, "sha256": sha256_file(p),
+                        rows.append({"name": p.name, "size": st.st_size, "sha256": digest,
                                      "modified": int(st.st_mtime), "url": "/download?ticket="+quote(ticket)})
                     except OSError: pass
             return self.json(200, {"files": rows})
@@ -280,6 +288,8 @@ class Handler(BaseHTTPRequestHandler):
                     target = unique_path(session["name"])
                     os.link(session["temp"], target)
                     session["temp"].unlink()
+                    target_stat = target.stat()
+                    file_hash_cache[target.name] = {"size": target_stat.st_size, "mtime_ns": target_stat.st_mtime_ns, "sha256": digest}
                     upload_sessions.pop(upload_id, None)
                     return self.json(201, {"ok": True, "name": target.name, "size": actual_size, "sha256": digest})
                 except OSError as exc:
@@ -321,6 +331,9 @@ class Handler(BaseHTTPRequestHandler):
                 target = unique_path(name)
                 os.link(temp, target)
                 temp.unlink()
+                target_stat = target.stat()
+                with lock:
+                    file_hash_cache[target.name] = {"size": target_stat.st_size, "mtime_ns": target_stat.st_mtime_ns, "sha256": h.hexdigest()}
             return self.json(201, {"ok": True, "name": target.name, "size": length, "sha256": h.hexdigest()})
         except Exception as exc:
             try: temp.unlink(missing_ok=True)
@@ -338,6 +351,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(404, {"error": "File not found"})
         try:
             target.unlink()
+            with lock:
+                file_hash_cache.pop(name, None)
             return self.json(200, {"ok": True})
         except OSError as exc:
             return self.json(500, {"error": str(exc)})
