@@ -25,6 +25,49 @@
   function hex(buffer) {
     return Array.from(new Uint8Array(buffer)).map(b=>b.toString(16).padStart(2,"0")).join("");
   }
+  async function sha256Hex(buffer) {
+    const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+    if (window.crypto && window.crypto.subtle) return hex(await window.crypto.subtle.digest("SHA-256", bytes));
+    // Private LAN HTTP pages are not secure contexts, so Web Crypto may be unavailable.
+    const K = [
+      0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+      0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+      0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+      0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+      0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+      0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+      0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+      0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+    ];
+    const H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+    const paddedLength = Math.ceil((bytes.length + 9) / 64) * 64;
+    const padded = new Uint8Array(paddedLength); padded.set(bytes); padded[bytes.length] = 0x80;
+    const view = new DataView(padded.buffer);
+    const bits = bytes.length * 8;
+    view.setUint32(paddedLength - 8, Math.floor(bits / 0x100000000));
+    view.setUint32(paddedLength - 4, bits >>> 0);
+    const w = new Uint32Array(64);
+    const rotr = (x,n) => (x >>> n) | (x << (32-n));
+    for (let offset=0; offset<paddedLength; offset+=64) {
+      for (let i=0;i<16;i++) w[i]=view.getUint32(offset+i*4);
+      for (let i=16;i<64;i++) {
+        const x=w[i-15], y=w[i-2];
+        const s0=rotr(x,7)^rotr(x,18)^(x>>>3), s1=rotr(y,17)^rotr(y,19)^(y>>>10);
+        w[i]=(w[i-16]+s0+w[i-7]+s1)>>>0;
+      }
+      let [a,b,c,d,e,f,g,h]=H;
+      for (let i=0;i<64;i++) {
+        const s1=rotr(e,6)^rotr(e,11)^rotr(e,25), ch=(e&f)^(~e&g);
+        const t1=(h+s1+ch+K[i]+w[i])>>>0;
+        const s0=rotr(a,2)^rotr(a,13)^rotr(a,22), maj=(a&b)^(a&c)^(b&c);
+        const t2=(s0+maj)>>>0;
+        h=g; g=f; f=e; e=(d+t1)>>>0; d=c; c=b; b=a; a=(t1+t2)>>>0;
+      }
+      H[0]=(H[0]+a)>>>0; H[1]=(H[1]+b)>>>0; H[2]=(H[2]+c)>>>0; H[3]=(H[3]+d)>>>0;
+      H[4]=(H[4]+e)>>>0; H[5]=(H[5]+f)>>>0; H[6]=(H[6]+g)>>>0; H[7]=(H[7]+h)>>>0;
+    }
+    return H.map(x=>x.toString(16).padStart(8,"0")).join("");
+  }
   function setOfflineStatus(text,kind) {
     el("offline-status").textContent=text;
     el("offline-dot").className="dot"+(kind?" "+kind:"");
@@ -77,6 +120,8 @@
 
   const localToken = new URLSearchParams(location.hash.slice(1)).get("token") || "";
   let localFile = null;
+  let localMaxFileBytes = 50 * 1024 ** 3;
+  let localChunkSize = 8 * 1024 * 1024;
   const localApi = path => path + (path.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(localToken);
   async function checkLocalServer() {
     if (!localToken) {
@@ -88,10 +133,13 @@
       const r=await fetch(localApi("/api/info"),{cache:"no-store"});
       if(!r.ok) throw new Error("Server rejected the session");
       const info=await r.json();
-      el("local-status").textContent="Connected to local server · "+info.name;
+      localMaxFileBytes=Number(info.max_file_bytes)||localMaxFileBytes;
+      localChunkSize=Number(info.chunk_size)||localChunkSize;
+      el("local-status").textContent="Connected · "+info.name+" · up to "+formatBytes(localMaxFileBytes)+" per file";
       el("local-host").textContent=location.origin;
       el("local-copy").disabled=false;
-      el("local-upload").disabled=!localFile;
+      el("local-upload").disabled=!localFile || localFile.size>localMaxFileBytes;
+      if(localFile && localFile.size>localMaxFileBytes) el("local-status").textContent="File exceeds server limit of "+formatBytes(localMaxFileBytes);
       return true;
     } catch (_) {
       el("local-status").textContent="Cannot reach local server. Open QRDrop from the Python server's pairing link.";
@@ -125,7 +173,9 @@
   el("local-file-input").addEventListener("change",e=>{
     localFile=e.target.files && e.target.files[0] || null;
     el("local-file-label").textContent=localFile ? localFile.name+" · "+formatBytes(localFile.size) : "Choose a file to upload";
-    el("local-upload").disabled=!localFile || !localToken;
+    const tooLarge=!!localFile && localFile.size>localMaxFileBytes;
+    el("local-upload").disabled=!localFile || !localToken || tooLarge;
+    if(tooLarge) el("local-status").textContent="File is "+formatBytes(localFile.size)+"; server limit is "+formatBytes(localMaxFileBytes)+". Increase --max-file-size-gib when starting the server.";
   });
   async function localJson(path, options={}) {
     const response=await fetch(localApi(path),{cache:"no-store",...options});
@@ -150,7 +200,9 @@
   }
   el("local-upload").addEventListener("click",async()=>{
     if(!localFile || !localToken) return;
-    const file=localFile; el("local-upload").disabled=true;
+    const file=localFile;
+    if(file.size>localMaxFileBytes) { el("local-status").textContent="File exceeds server limit of "+formatBytes(localMaxFileBytes); return; }
+    el("local-upload").disabled=true;
     el("local-status").textContent="Preparing resumable upload · "+file.name;
     el("local-percent").textContent="0%"; el("local-progress").style.width="0%";
     let uploadId="";
@@ -170,13 +222,13 @@
         uploadId=started.id;
         sessionStorage.setItem(sessionKey,JSON.stringify({id:uploadId,name:file.name,size:file.size,lastModified:file.lastModified}));
       }
-      const chunkSize=4*1024*1024;
+      const chunkSize=Number(status.chunk_size)||localChunkSize;
       let status=await localJson("/api/upload/status?id="+encodeURIComponent(uploadId));
       let offset=status.offset;
       while(offset<file.size) {
         const chunkStart=offset;
         const chunk=file.slice(chunkStart,Math.min(chunkStart+chunkSize,file.size));
-        const chunkHash=hex(await crypto.subtle.digest("SHA-256",await chunk.arrayBuffer()));
+        const chunkHash=await sha256Hex(await chunk.arrayBuffer());
         let accepted=false;
         for(let attempt=0;attempt<4&&!accepted;attempt++) {
           try {
