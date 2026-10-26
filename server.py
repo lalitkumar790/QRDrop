@@ -194,8 +194,8 @@ class Handler(BaseHTTPRequestHandler):
             if not name:
                 return self.json(400, {"error": "A filename is required"})
             DATA_DIR.mkdir(parents=True, exist_ok=True)
-            # Reserve capacity for active uploads so simultaneous starts do not all
-            # assume the same free disk space is available.
+            # Check free space and register the reservation under one lock so
+            # concurrent upload starts cannot overbook the same disk capacity.
             with lock:
                 now = time.time()
                 for old_id, old in list(upload_sessions.items()):
@@ -206,14 +206,13 @@ class Handler(BaseHTTPRequestHandler):
                 free_bytes = shutil.disk_usage(DATA_DIR).free
                 if free_bytes < size + pending_bytes + RESERVE_FREE_BYTES:
                     return self.json(507, {"error": "Not enough free disk space for this upload plus the safety reserve", "free_bytes": free_bytes, "requested_bytes": size, "reserved_bytes": pending_bytes, "reserve_bytes": RESERVE_FREE_BYTES})
-            upload_id = secrets.token_urlsafe(18)
-            temp = DATA_DIR / ("." + secrets.token_hex(12) + ".upload")
-            try:
-                temp.touch(exist_ok=False)
-            except OSError:
-                return self.json(500, {"error": "Could not create temporary upload"})
-            with lock:
-                upload_sessions[upload_id] = {"name": name, "size": size, "offset": 0, "temp": temp, "expires": time.time() + UPLOAD_SESSION_TTL, "session_lock": threading.Lock()}
+                upload_id = secrets.token_urlsafe(18)
+                temp = DATA_DIR / ("." + secrets.token_hex(12) + ".upload")
+                try:
+                    temp.touch(exist_ok=False)
+                except OSError:
+                    return self.json(500, {"error": "Could not create temporary upload"})
+                upload_sessions[upload_id] = {"name": name, "size": size, "offset": 0, "temp": temp, "expires": now + UPLOAD_SESSION_TTL, "session_lock": threading.Lock()}
             return self.json(201, {"id": upload_id, "offset": 0, "size": size, "chunk_size": MAX_CHUNK_BYTES, "max_file_bytes": MAX_FILE_BYTES})
 
         if path == "/api/upload/chunk":
