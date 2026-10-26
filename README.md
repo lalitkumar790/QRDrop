@@ -16,13 +16,13 @@ Open the hosted app: https://lalitkumar790.github.io/QRDrop/
 
 ## Local Network transfer (no internet required)
 
-Uploads are sent in 4 MiB chunks with acknowledged offsets, retry handling, and a final SHA-256 digest. If the connection drops or the page reloads, select the same file again in the same tab to resume while the server session remains active (up to six hours). The server only lists a file after all declared bytes arrive and finalization succeeds.
+Uploads support files up to 50 GiB by default and are sent in 8 MiB chunks with acknowledged offsets, retry handling, per-chunk SHA-256 verification, and a final whole-file SHA-256 digest. The limit is configurable; the server checks available disk space and keeps a 256 MiB free-space reserve by default. If the connection drops or the page reloads, select the same file again in the same tab to resume while the server session remains active (up to six hours). The server only lists a file after all declared bytes arrive and finalization succeeds.
 
 1. Connect both devices to the same Wi-Fi network or to a phone hotspot. Internet access is not required; the devices just need local connectivity. Some managed or guest Wi-Fi networks block device-to-device traffic.
-2. On the hosting device, install Python 3 and run `python server.py --host 0.0.0.0 --port 8765`.
+2. On the hosting device, install Python 3 and run `python server.py --host 0.0.0.0 --port 8765 --max-file-size-gib 50 --chunk-size-mib 8`.
 3. Open the pairing URL printed by the server on the host, then share that URL only with the intended receiving device.
-4. Select **Local Network** in QRDrop to upload, download, refresh, or delete files. Uploaded files are stored in the server's `received/` folder until deleted.
-5. Stop the server with Ctrl+C when finished. If another device cannot connect, check the host firewall and ensure Wi-Fi client isolation is disabled.
+4. Select **Local Network** in QRDrop to upload, download, refresh, or delete files. Uploaded files are stored in the server's `received/` folder until deleted. Increase `--max-file-size-gib` if you need a larger per-file limit, and ensure the disk has enough free space.
+5. Stop the server with Ctrl+C when finished. If another device cannot connect, check the host firewall and ensure Wi-Fi client isolation is disabled. Both devices must be on the same reachable subnet; guest Wi-Fi and some phone hotspots may isolate clients. The server prints its chosen LAN address; if the machine has multiple network adapters or a VPN, verify that address is reachable from the other device.
 
 This local-server mode is available when the UI is served by `server.py`; the public GitHub Pages site cannot itself host a server on your device. The session token protects API operations, but the local HTTP connection is not encrypted. Use trusted networks only and stop the server after the transfer.
 
