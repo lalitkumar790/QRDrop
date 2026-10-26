@@ -57,9 +57,9 @@
 
 
       <section id="local-panel" class="panel hidden" role="tabpanel" aria-labelledby="local-tab">
-        <div class="panel-heading"><div><span class="step">03 · LOCAL NETWORK</span><h2>Transfer over Wi-Fi, without internet</h2><p>Upload a file to the QRDrop server running on this device, then open the same local address on another device to download it. Traffic stays on your local network.</p></div></div>
+        <div class="panel-heading"><div><span class="step">03 · LOCAL NETWORK</span><h2>Transfer over Wi-Fi, without internet</h2><p>Upload a file to the QRDrop server running on this device, then open the same local address on another device to download it. Traffic stays on your local network. Use this mode for large files; the default per-file limit is 50 GiB and can be configured when starting the server.</p></div></div>
         <div class="local-notice"><strong>Important:</strong> this mode works only when QRDrop is opened from the Python local server, not from the public GitHub Pages website. The hosting device must stay on and both devices must be able to reach it on the same Wi-Fi or hotspot.</div>
-        <label class="file-picker" for="local-file-input"><span class="picker-icon" aria-hidden="true">＋</span><span class="picker-copy"><strong id="local-file-label">Choose a file to upload</strong><small>Files are stored in the server's local received folder until deleted.</small></span><span class="picker-action">Browse</span></label>
+        <label class="file-picker" for="local-file-input"><span class="picker-icon" aria-hidden="true">＋</span><span class="picker-copy"><strong id="local-file-label">Choose a file to upload</strong><small>Up to 50 GiB per file by default; the server checks available disk space before accepting an upload.</small></span><span class="picker-action">Browse</span></label>
         <input id="local-file-input" type="file">
         <div class="progress-meta"><span id="local-status" aria-live="polite">Checking local server…</span><span id="local-percent">0%</span></div>
         <div class="progress-track" aria-hidden="true"><div id="local-progress" class="progress-fill"></div></div>
@@ -67,7 +67,7 @@
         <div class="local-address"><small>Share this local address with the other device</small><strong id="local-host">Checking server address…</strong><button type="button" id="local-copy" class="secondary" disabled>Copy address</button></div>
         <div class="local-files-heading"><h3>Files on this server</h3><span id="local-file-count">0 files</span></div>
         <div id="local-files" class="local-files"><p class="hint">Files will appear here when the server is reachable.</p></div>
-        <p class="hint">No cloud is involved, but this is a network transfer, not a radio-free transfer: Wi-Fi or a phone hotspot must be enabled. Avoid public networks; anyone with access to your session link may be able to transfer files. Stop the server when finished.</p>
+        <p class="hint">No cloud is involved, but this is a network transfer: Wi-Fi or a phone hotspot must be enabled and both devices must be on the same reachable LAN. Transfers use HTTP on your local network, not end-to-end encryption; avoid public/shared networks and share the pairing link only with the intended device. Stop the server when finished.</p>
       </section>
       <section id="receive-panel" class="panel hidden" role="tabpanel" aria-labelledby="receive-tab">
         <div class="panel-heading"><div><span class="step">02 · RECEIVER</span><h2>Scan the QR codes</h2><p>Point the camera at the sender’s screen. QRDrop collects the frames and checks the reconstructed file before offering it to you.</p></div></div>
