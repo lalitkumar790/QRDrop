@@ -60,7 +60,7 @@ def unique_path(name):
         n += 1
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "QRDrop/1.1"
+    server_version = "QRDrop/1.3.0"
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *args):
@@ -104,7 +104,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/style.css":
             return self.send_bytes(200, (STATIC_DIR / "style.css").read_bytes(), "text/css; charset=utf-8")
         if path == "/api/health":
-            return self.json(200, {"ok": True, "app": "QRDrop", "version": "1.2.0"})
+            return self.json(200, {"ok": True, "app": "QRDrop", "version": "1.3.0"})
         if path == "/download":
             ticket = parse_qs(parsed.query).get("ticket", [""])[0]
             with lock:
@@ -363,7 +363,7 @@ def main():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.daemon_threads = True
-    print("\nQRDrop — Universal Local File Transfer v1.2")
+    print("\nQRDrop — Universal Local File Transfer v1.3")
     print("=" * 42)
     print(f"Maximum file size: {MAX_FILE_BYTES / (1024 ** 3):g} GiB")
     print(f"Upload chunk size: {MAX_CHUNK_BYTES // (1024 * 1024)} MiB")
