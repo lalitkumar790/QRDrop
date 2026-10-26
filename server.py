@@ -341,8 +341,7 @@ class Handler(BaseHTTPRequestHandler):
                 os.link(temp, target)
                 temp.unlink()
                 target_stat = target.stat()
-                with lock:
-                    file_hash_cache[target.name] = {"size": target_stat.st_size, "mtime_ns": target_stat.st_mtime_ns, "sha256": h.hexdigest()}
+                file_hash_cache[target.name] = {"size": target_stat.st_size, "mtime_ns": target_stat.st_mtime_ns, "sha256": h.hexdigest()}
             return self.json(201, {"ok": True, "name": target.name, "size": length, "sha256": h.hexdigest()})
         except Exception as exc:
             try: temp.unlink(missing_ok=True)
